@@ -14,6 +14,7 @@ has checked who you are before a request gets here.
 from __future__ import annotations
 
 import io
+import hashlib
 import ipaddress
 import json
 import os
@@ -21,6 +22,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -34,7 +36,7 @@ from importlib import resources
 from urllib.parse import urlsplit
 
 from . import __version__
-from .config import Config, config_path, load_config
+from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
 from .feeds import FeedError
 from .library import KIND_DIRS, feed_folders, prune, records
@@ -190,6 +192,7 @@ class Service:
         self._stop = threading.Event()
         self._tees: tuple[_Tee, _Tee] | None = None
         self._yt_dlp_updated = 0.0
+        self._config_lock = threading.Lock()
 
     def config(self) -> Config:
         return load_config(self.config_file, library=self.library)
@@ -423,6 +426,83 @@ class Service:
         except OSError as exc:
             return f"(cannot read {self.config_file}: {exc})"
 
+    def config_view(self) -> dict:
+        """The config file as the panel's editor shows it.
+
+        ``version`` is a hash of the file as read; :meth:`save_config` refuses
+        a save made against an older one, so an edit made meanwhile in the File
+        Editor or over Samba is not silently overwritten. ``""`` means there is
+        no file yet.
+        """
+        try:
+            with open(self.config_file, "rb") as fh:
+                raw = fh.read()
+        except FileNotFoundError:
+            return {"path": self.config_file, "text": "", "version": "", "exists": False}
+        except OSError as exc:
+            return {"path": self.config_file, "text": f"(cannot read {self.config_file}: {exc})",
+                    "version": None, "exists": True}
+        return {"path": self.config_file, "text": raw.decode("utf-8", "replace"),
+                "version": _version(raw), "exists": True}
+
+    def save_config(self, text: str, version: str | None) -> dict:
+        """Replace the config file with ``text``, if it is a config a run accepts.
+
+        The text is checked by the same :func:`load_config` a run uses, from a
+        temporary file beside the real one, which then takes the real one's
+        place in a single rename: a run starting meanwhile reads either the old
+        file or the new one, never half of one. The old file is kept as
+        ``<name>.bak``. Raises :class:`ConfigError` naming what is wrong, and
+        :class:`ConfigConflict` if the file changed since ``version`` was read.
+        """
+        if not isinstance(text, str) or not text.strip():
+            raise ConfigError("The configuration is empty.")
+        if not text.endswith("\n"):
+            text += "\n"
+        folder = os.path.dirname(os.path.abspath(self.config_file))
+        with self._config_lock:
+            current = self.config_view()
+            if version is None or current["version"] != version:
+                raise ConfigConflict(
+                    "The file changed since this page loaded it (in the File Editor, over "
+                    "Samba, or in another tab). Reload it, and make your change again."
+                )
+            fd, tmp = tempfile.mkstemp(prefix=".fetchit-", suffix=".json", dir=folder)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(text)
+                config = load_config(tmp, library=self.library)
+                if current["exists"]:
+                    shutil.copy2(self.config_file, self.config_file + ".bak")
+                    shutil.copymode(self.config_file, tmp)
+                os.replace(tmp, self.config_file)
+            except BaseException:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+        self.activity.appendleft({
+            "when": _iso(time.time()),
+            "kind": "config", "text": f"saved, {len(config.feeds)} feed(s).", "ok": True,
+        })
+        log_line(f"config saved from the panel: {len(config.feeds)} feed(s)")
+        return {**self.config_view(), "feeds": len(config.feeds)}
+
+
+class ConfigConflict(Exception):
+    """The config file changed since the editor read it."""
+
+
+def _version(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _untemp(message: str) -> str:
+    import re
+
+    return re.sub(r"'[^']*\.fetchit-[^']*\.json'", "the configuration", message)
+
 
 # --- HTTP -------------------------------------------------------------------
 
@@ -483,7 +563,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/log":
                 self._json(HTTPStatus.OK, {"log": svc.log_tail()})
             elif path == "/api/config":
-                self._json(HTTPStatus.OK, {"path": svc.config_file, "text": svc.config_text()})
+                self._json(HTTPStatus.OK, svc.config_view())
             elif path.startswith("/api/jobs/"):
                 job = svc.jobs.get(path.rsplit("/", 1)[-1])
                 if job is None:
@@ -509,6 +589,25 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.ACCEPTED, svc.prune().view())
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found."})
+
+    def do_PUT(self) -> None:  # noqa: N802 - the stdlib's name
+        if not self._allowed():
+            return
+        path = urlsplit(self.path).path.rstrip("/")
+        if path != "/api/config":
+            self._json(HTTPStatus.NOT_FOUND, {"error": "Not found."})
+            return
+        body = self._body()
+        try:
+            self._json(HTTPStatus.OK, self.service.save_config(body.get("text"), body.get("version")))
+        except ConfigConflict as exc:
+            self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except (FeedError, ValueError, TypeError) as exc:
+            # A config a run would refuse. Name the problem, not the temporary
+            # file it was found in.
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": _untemp(str(exc))})
+        except OSError as exc:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not save: {exc}"})
 
 
 def make_server(service: Service, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> ThreadingHTTPServer:

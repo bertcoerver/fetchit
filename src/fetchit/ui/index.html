@@ -54,6 +54,11 @@
   .hidden { display: none !important; }
   code { background: var(--code); border-radius: 4px; padding: 0 4px; font-size: 13px; }
   details summary { cursor: pointer; color: var(--muted); }
+  textarea#config { width: 100%; min-height: 420px; resize: vertical; background: var(--code); color: var(--text);
+                    border: 1px solid var(--line); border-radius: 7px; padding: 10px; tab-size: 2;
+                    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  textarea#config:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .config-line { margin: 6px 0 0; font-size: 13px; min-height: 1.4em; }
 </style>
 </head>
 <body>
@@ -103,10 +108,16 @@
     <section class="wide">
       <h2>Log <span class="spacer"></span><button class="small" id="log-refresh">Refresh</button></h2>
       <pre id="log" style="max-height:420px"></pre>
-      <details style="margin-top:12px"><summary>Configuration — <span id="config-path"></span></summary>
-        <p class="muted">Edit it with the File Editor or over Samba; the next run reads it.</p>
-        <pre id="config"></pre>
-      </details>
+    </section>
+
+    <section class="wide">
+      <h2>Configuration <span class="muted" id="config-path" style="font-weight:400;font-size:13px"></span><span class="spacer"></span>
+        <button class="small" id="config-format">Format</button>
+        <button class="small" id="config-revert">Revert</button>
+        <button class="small primary" id="config-save" disabled>Save</button></h2>
+      <textarea id="config" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Configuration file"></textarea>
+      <p class="config-line" id="config-line"></p>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">Saving checks the file the way a run reads it, and keeps the old one beside it as <code>.bak</code>. The next run uses it. The README lists every key.</p>
     </section>
   </div>
 </main>
@@ -201,10 +212,69 @@ async function loadLog() {
   catch (e) { $("log").textContent = e.message; }
 }
 
-async function loadConfig() {
-  try { const c = await api("api/config"); $("config-path").textContent = c.path; $("config").textContent = c.text; }
-  catch (e) { $("config").textContent = e.message; }
+// The editor. `cfg.version` is the file as last read; the server refuses a save
+// against an older one rather than overwrite an edit made elsewhere meanwhile.
+const cfg = {version: null, saved: ""};
+const dirty = () => $("config").value !== cfg.saved;
+
+function configLine(html, cls = "muted") { $("config-line").className = "config-line " + cls; $("config-line").innerHTML = html; }
+
+function checkConfig() {
+  const text = $("config").value;
+  $("config-save").disabled = !dirty() || cfg.version === null;
+  if (!text.trim()) return configLine("Empty.", "bad"), false;
+  try {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object" || !Array.isArray(data.feeds)) return configLine("Needs a <code>\"feeds\"</code> list.", "bad"), false;
+    configLine(dirty() ? `Valid JSON, ${data.feeds.length} feed(s) — not saved yet.` : `${data.feeds.length} feed(s).`, dirty() ? "warn" : "muted");
+    return true;
+  } catch (e) {
+    // Turn "at position N" into a line number, which is what one can find.
+    const m = /position (\d+)/.exec(e.message);
+    const where = m ? ` (line ${text.slice(0, +m[1]).split("\n").length})` : "";
+    configLine(esc(e.message) + where, "bad");
+    return false;
+  }
 }
+
+async function loadConfig(force = false) {
+  if (!force && dirty()) return;
+  try {
+    const c = await api("api/config");
+    $("config-path").textContent = c.path;
+    cfg.version = c.version; cfg.saved = c.text;
+    $("config").value = c.text;
+    if (!c.exists) configLine("There is no file yet. Write one and save it.", "warn"); else checkConfig();
+    $("config-save").disabled = true;
+  } catch (e) { configLine(esc(e.message), "bad"); }
+}
+
+async function saveConfig() {
+  if (!checkConfig()) return;
+  $("config-save").disabled = true;
+  try {
+    const c = await api("api/config", {method: "PUT", body: {text: $("config").value, version: cfg.version}});
+    cfg.version = c.version; cfg.saved = c.text; $("config").value = c.text;
+    configLine(`Saved, ${c.feeds} feed(s).`, "ok");
+    loadStatus(); loadFeeds(); loadActivity();
+  } catch (e) { configLine(esc(e.message), "bad"); $("config-save").disabled = false; }
+}
+
+$("config").addEventListener("input", checkConfig);
+$("config").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveConfig(); }
+});
+$("config-save").addEventListener("click", saveConfig);
+$("config-revert").addEventListener("click", () => {
+  if (!dirty() || confirm("Throw away your changes and reload the file?")) loadConfig(true);
+});
+$("config-format").addEventListener("click", () => {
+  if (!checkConfig()) return;
+  const text = JSON.stringify(JSON.parse($("config").value), null, 2) + "\n";
+  if (text !== $("config").value) { $("config").select(); document.execCommand("insertText", false, text); }
+  checkConfig();
+});
+window.addEventListener("beforeunload", (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ""; } });
 
 function setRunning(on) { document.querySelectorAll("[data-run], [data-feed]").forEach(b => b.disabled = on); }
 

@@ -29,14 +29,15 @@ schedule without coordinating.
 
 ## Setting up
 
-1. Put your `fetchit.json` in the add-on's config folder, which the host shows as
+1. Write your `fetchit.json` in the panel's **Configuration** editor (see below),
+   or put it in the add-on's config folder, which the host shows as
    `/addon_configs/<hash>_fetchit/fetchit.json`. Start from `fetchit.example.json`
    in the repository; the README describes every key.
 2. Set `on_start` to `dry-run` and start the add-on. The log shows what each feed
    would download, at what quality, and to where. Set it back to `wait`.
 3. Start it. The next scheduled run downloads for real.
 
-You can edit `fetchit.json` at any time; the next run reads it.
+You can edit `fetchit.json` at any time, in the panel or elsewhere; the next run reads it.
 
 If YouTube starts refusing with "confirm you're not a bot", put a `cookies.txt`
 export from a (throwaway) logged-in account next to `fetchit.json` as
@@ -49,8 +50,14 @@ sidebar** on its Info page — or **Open Web UI**. It shows the library and the
 free disk, when the next run is, and every feed with what the library holds of
 it (items, size, newest), when it last downloaded, and its settings. Buttons run
 everything, or one feed, for real or as a dry run, and prune now; what a run
-prints is shown as it goes. Below that: recent downloads, the log, and the
-configuration file as it stands. It is behind your Home Assistant login.
+prints is shown as it goes. Below that: recent downloads and the log.
+
+At the bottom is `fetchit.json` itself, to edit. **Save** (or ⌘S / Ctrl+S)
+checks it the way a run reads it and refuses one that a run would refuse, saying
+what is wrong; a saved file keeps the previous one beside it as
+`fetchit.json.bak`. If the file was changed elsewhere (the File Editor, Samba)
+after the panel loaded it, the save is refused rather than overwrite that edit:
+**Revert** loads the current file. The panel is behind your Home Assistant login.
 
 ## Configuration
 

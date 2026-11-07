@@ -53,9 +53,9 @@ def running(tmp_path):
         service.stop()
 
 
-def _call(base, path, body=None):
+def _call(base, path, body=None, method=None):
     data = json.dumps(body).encode() if body is not None else None
-    request = Request(base + path, data=data, headers={"Content-Type": "application/json"})
+    request = Request(base + path, data=data, headers={"Content-Type": "application/json"}, method=method)
     try:
         with urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -147,3 +147,70 @@ def test_a_broken_config_is_shown_not_fatal(running, tmp_path):
     (tmp_path / "fetchit.json").write_text("{nope")
     status, info = _call(base, "/api/status")
     assert status == 200 and "not valid JSON" in info["problem"]
+
+
+def test_the_panel_edits_the_config_file(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    config = tmp_path / "fetchit.json"
+    before = config.read_text()
+
+    status, view = _call(base, "/api/config")
+    assert status == 200 and view["text"] == before and view["exists"] and view["version"]
+
+    data = json.loads(before)
+    data["feeds"].append({"name": "Podcast", "url": "https://podcast.example/feed.xml"})
+    text = json.dumps(data, indent=2)
+    status, saved = _call(base, "/api/config", {"text": text, "version": view["version"]}, "PUT")
+    assert status == 200, saved
+    assert saved["feeds"] == 3 and saved["version"] != view["version"]
+    assert config.read_text() == text + "\n"
+    assert (tmp_path / "fetchit.json.bak").read_text() == before
+    _, feeds = _call(base, "/api/feeds")
+    assert [f["name"] for f in feeds["feeds"]][-1] == "Podcast"
+    _, activity = _call(base, "/api/activity")
+    assert activity["activity"][0]["kind"] == "config"
+    assert not list(tmp_path.glob(".fetchit-*"))
+
+
+@pytest.mark.parametrize("text, says", [
+    ("{\"feeds\": [", "not valid JSON"),
+    ('{"feeds": [], "colour": 1}', "unknown key"),
+    ('{"feeds": [{"url": "https://x.example/feed"}]}', "name"),
+    ("   ", "empty"),
+])
+def test_a_config_a_run_would_refuse_is_not_saved(running, tmp_path, text, says):
+    start, _ = running
+    base, _ = start()
+    config = tmp_path / "fetchit.json"
+    before = config.read_text()
+    _, view = _call(base, "/api/config")
+    status, answer = _call(base, "/api/config", {"text": text, "version": view["version"]}, "PUT")
+    assert status == 422
+    assert says.lower() in answer["error"].lower()
+    assert ".fetchit-" not in answer["error"]
+    assert config.read_text() == before
+    assert not (tmp_path / "fetchit.json.bak").exists()
+    assert not list(tmp_path.glob(".fetchit-*"))
+
+
+def test_an_edit_made_elsewhere_is_not_overwritten(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    config = tmp_path / "fetchit.json"
+    _, view = _call(base, "/api/config")
+    config.write_text(json.dumps({"feeds": []}))  # the File Editor, meanwhile
+    status, answer = _call(base, "/api/config", {"text": view["text"], "version": view["version"]}, "PUT")
+    assert status == 409 and "changed" in answer["error"]
+    assert json.loads(config.read_text()) == {"feeds": []}
+
+
+def test_a_first_config_can_be_written_from_the_panel(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    config = tmp_path / "fetchit.json"
+    config.unlink()
+    _, view = _call(base, "/api/config")
+    assert view == {"path": str(config), "text": "", "version": "", "exists": False}
+    status, saved = _call(base, "/api/config", {"text": '{"feeds": []}', "version": ""}, "PUT")
+    assert status == 200 and saved["exists"] and saved["feeds"] == 0
