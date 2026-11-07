@@ -8,7 +8,7 @@
 # only after both images are pushed — Supervisor offers an update the moment it
 # sees a new version here, so bumping it first would offer one it cannot pull.
 name: fetchit
-version: "0.1.0"
+version: "0.1.1"
 slug: fetchit
 image: ghcr.io/bertcoerver/{arch}-fetchit
 description: Download feeds into /media, laid out for Jellyfin, rssignal and db-podcast

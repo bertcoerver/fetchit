@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- First release installed from the add-on repository.
+
 ## Unreleased
 
 - First version: the downloading that rssignal and db-podcast used to do
