@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Edit fetchit.json from the panel, checked the way a run reads it
+
 ## 0.1.1
 
 - First version: the downloading that rssignal and db-podcast used to do
