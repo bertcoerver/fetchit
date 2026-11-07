@@ -1,0 +1,145 @@
+name: Release add-on
+
+# Builds the Home Assistant add-on for both architectures, pushes the images to
+# ghcr.io, and only then bumps `version` in addon/config.yaml. That order is the
+# point: Supervisor offers an update as soon as it sees a new version on main,
+# so the images have to exist before the version does.
+#
+# Run it from the Actions tab (Release add-on → Run workflow), or:
+#
+#   make addon-release VERSION=0.3.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New add-on version, x.y.z
+        required: true
+
+concurrency:
+  group: addon-release
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::Release from main, not ${GITHUB_REF}."
+            exit 1
+          fi
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'${VERSION}' is not x.y.z."
+            exit 1
+          fi
+          current="$(yq '.version' addon/config.yaml)"
+          newest="$(printf '%s\n%s\n' "${current}" "${VERSION}" | sort -V | tail -n 1)"
+          if [ "${VERSION}" = "${current}" ] || [ "${newest}" != "${VERSION}" ]; then
+            echo "::error::${VERSION} is not newer than ${current}."
+            exit 1
+          fi
+
+      # The add-on is the only place this runs, and Home Assistant OS has no
+      # shell to find out afterwards what a broken release broke.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pytest pytest-xdist ".[video]"
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ env.VERSION }}
+      - run: pytest
+
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          # Native arm64, not QEMU: pip under emulation is slow, and ffmpeg's
+          # package pulls in a great deal of it.
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the base image
+        id: base
+        run: echo "from=$(yq '.build_from.${{ matrix.arch }}' addon/build.yaml)" >> "${GITHUB_OUTPUT}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: addon/Dockerfile
+          push: true
+          # A plain single-arch image rather than an index with an attestation
+          # beside it, which is what Supervisor expects to pull.
+          provenance: false
+          build-args: |
+            BUILD_FROM=${{ steps.base.outputs.from }}
+            BUILD_ARCH=${{ matrix.arch }}
+            BUILD_VERSION=${{ env.VERSION }}
+          tags: |
+            ghcr.io/bertcoerver/${{ matrix.arch }}-fetchit:${{ env.VERSION }}
+            ghcr.io/bertcoerver/${{ matrix.arch }}-fetchit:latest
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # The commit the images were built from, not whatever main is now. If
+      # main has moved on in the meantime the push below fails rather than
+      # putting a version on code that is not in the image; run it again.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Write the changelog
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'addon-v*' 2>/dev/null || true)"
+          if [ -n "${previous}" ]; then
+            notes="$(git log --no-merges --format='- %s' "${previous}..HEAD" -- src addon pyproject.toml)"
+          fi
+          notes="${notes:-- First release installed from the add-on repository.}"
+          body="$(sed '1{/^# Changelog$/d;}' addon/CHANGELOG.md)"
+          printf '# Changelog\n\n## %s\n\n%s\n%s\n' "${VERSION}" "${notes}" "${body}" > addon/CHANGELOG.md
+
+      # sed rather than `yq -i`, which would reflow the comments in the file.
+      - name: Bump the version
+        run: |
+          sed -i -E "s/^version: \".*\"$/version: \"${VERSION}\"/" addon/config.yaml
+          test "$(yq '.version' addon/config.yaml)" = "${VERSION}"
+
+      # The tag is `addon-v…`, not `v…`: release.yml publishes to PyPI on
+      # `v*`. setuptools-scm reads the version through the prefix all the same.
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add addon/config.yaml addon/CHANGELOG.md
+          git commit -m "Release add-on ${VERSION}"
+          git tag "addon-v${VERSION}"
+          git push origin HEAD:main "addon-v${VERSION}"

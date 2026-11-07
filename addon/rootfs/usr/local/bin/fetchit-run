@@ -1,0 +1,30 @@
+#!/usr/bin/with-contenv bashio
+#
+# One fetchit run, with the environment it needs.
+#
+# Not what the add-on runs on its schedule — that is `fetchit serve`, see the
+# s6 service — but the same thing by hand, with the same environment, for a
+# person who has a shell in the container.
+
+set -e
+
+# shellcheck source=../lib/fetchit-env.sh
+source /usr/local/lib/fetchit-env.sh
+
+if ! bashio::fs.file_exists "${FETCHIT_CONFIG}"; then
+    bashio::log.error "No fetchit.json at ${FETCHIT_CONFIG}."
+    bashio::log.error "Put one in the add-on's config folder — see DOCS.md."
+    exit 1
+fi
+
+bashio::log.info "Starting fetchit run..."
+
+# fetchit reports a failed feed and carries on, so a non-zero exit means
+# something stopped the whole run.
+if fetchit run "$@"; then
+    bashio::log.info "Run finished."
+else
+    rc=$?
+    bashio::log.error "Run failed (exit ${rc}). See ${FETCHIT_LOG}."
+    exit "${rc}"
+fi

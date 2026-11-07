@@ -1,0 +1,13 @@
+#!/usr/bin/with-contenv bashio
+#
+# The scheduler loop does not exit on its own, so reaching here means something
+# stopped it: the add-on was stopped by hand, or the loop itself died. Either
+# way the container should go down rather than sit there scheduling nothing.
+declare exit_code="${1}"
+
+if [[ "${exit_code}" -eq 0 ]] || [[ "${exit_code}" -eq 256 ]]; then
+    bashio::log.info "fetchit stopped."
+    exec /run/s6/basedir/bin/halt
+fi
+
+bashio::log.warning "fetchit stopped unexpectedly (${exit_code}); restarting."

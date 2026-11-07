@@ -1,0 +1,43 @@
+{
+  "keep_days": 30,
+  "quality": {"max_height": 1080},
+  "feeds": [
+    {
+      "name": "Le Dessous des Images",
+      "url": "https://www.arte.tv/fr/videos/RC-023176/le-dessous-des-images/"
+    },
+    {
+      "name": "Bureau Buitenland (NPO)",
+      "url": "https://npo.nl/start/serie/bureau-buitenland/afleveringen",
+      "quality": {"part_size_mb": 95}
+    },
+    {
+      "name": "The Daily Show",
+      "url": "https://www.youtube.com/@TheDailyShow",
+      "duration_seconds_min": "7:00",
+      "duration_seconds_max": "30:00",
+      "published_weekday_contains": ["Tuesday", "Wednesday", "Thursday", "Friday"],
+      "keep_days": 7
+    },
+    {
+      "name": "3Blue1Brown",
+      "url": "https://www.youtube.com/@3blue1brown",
+      "since": "2015-01-01",
+      "max_per_day": 1,
+      "keep_days": 0
+    },
+    {
+      "name": "Bureau Buitenland",
+      "url": "https://podcast.npo.nl/feed/bureau-buitenland.xml"
+    },
+    {
+      "name": "Mes premières Belles Histoires",
+      "urls": ["https://flyer.bayam.tv/4sYB/dj8", "https://flyer.bayam.tv/4sYB/pmo"],
+      "keep_days": 0
+    },
+    {
+      "name": "Wait But Why",
+      "url": "https://waitbutwhy.com/feed"
+    }
+  ]
+}

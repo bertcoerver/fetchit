@@ -1,0 +1,9 @@
+# Base image per architecture.
+#
+# Debian Trixie matters, and not incidentally: signal-cli 0.14 needs a JRE 25
+# and the aarch64 libsignal build needs glibc 2.41, neither of which Bookworm
+# has. The image also brings s6-overlay and bashio, which is what `run` and
+# `finish` are written against.
+build_from:
+  aarch64: ghcr.io/hassio-addons/debian-base:9.4.0
+  amd64: ghcr.io/hassio-addons/debian-base:9.4.0

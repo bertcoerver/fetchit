@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fetchit"
+dynamic = ["version"]
+description = "Download feeds into a media library that other tools can read."
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    {name = "Bert Coerver", email = "b.coerver@mailbox.org"}
+]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+# feedparser reads RSS and Atom; mutagen reads the length of what was
+# downloaded and tags audio for a music library. Both are pure Python.
+# Video sources also need `ffmpeg` on PATH, and YouTube feeds `yt-dlp` (the
+# `video` extra below) — only those feeds, so `fetchit doctor` reports them
+# without failing.
+dependencies = [
+    "feedparser>=6.0",
+    "mutagen>=1.47",
+]
+
+[project.scripts]
+fetchit = "fetchit.cli:main"
+
+[project.optional-dependencies]
+# yt-dlp is a large, weekly-moving package and only YouTube feeds touch it, so
+# it is asked for explicitly: `pip install fetchit[video]`. fetchit runs it as
+# a command, and this is what puts that command on PATH.
+video = ["yt-dlp>=2024.8"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-xdist>=3.0",
+    "ipython>=8.0",
+    "ipykernel>=6.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-n auto"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The GUI `fetchit serve` shows.
+[tool.setuptools.package-data]
+fetchit = ["ui/*.html"]
+
+[tool.setuptools_scm]

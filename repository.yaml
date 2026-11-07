@@ -1,0 +1,7 @@
+# Makes this repository a Home Assistant add-on repository: add
+# https://github.com/bertcoerver/fetchit under Settings → Add-ons → Add-on
+# Store → ⋮ → Repositories, and Supervisor finds the add-on in addon/ by its
+# config.yaml.
+name: fetchit
+url: https://github.com/bertcoerver/fetchit
+maintainer: Bert Coerver
