@@ -215,6 +215,8 @@ magazines is a list of those links; add the new one each month:
  "urls": ["https://flyer.bayam.tv/4sYB/dj8", "https://flyer.bayam.tv/4sYB/pmo"]}
 ```
 
+The GUI has a box for this: paste the link, name the feed, **Add and download**.
+
 Each track becomes an episode, dated with the issue's release, numbered with the
 issue number, and described with the magazine it came with.
 

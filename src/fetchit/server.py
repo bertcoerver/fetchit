@@ -36,6 +36,7 @@ from importlib import resources
 from urllib.parse import urlsplit
 
 from . import __version__
+from .bayam import is_bayam_link
 from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
 from .feeds import FeedError
@@ -381,6 +382,7 @@ class Service:
             out.append({
                 "name": cfg.name,
                 "url": cfg.url,
+                "bayam": all(is_bayam_link(url) for url in cfg.sources),
                 "urls": len(cfg.sources),
                 "kinds": [KIND_DIRS[kind] for kind, _ in feed_folders(config.library, cfg.name)],
                 "items": len(found),
@@ -489,6 +491,80 @@ class Service:
         log_line(f"config saved from the panel: {len(config.feeds)} feed(s)")
         return {**self.config_view(), "feeds": len(config.feeds)}
 
+    def add_bayam_links(self, name: str, links: list[str]) -> dict:
+        """Add magazine links to the Bayam feed called ``name``, in the config file.
+
+        What typing them into the editor's ``urls`` list does, without the
+        typing: a new issue of a magazine is one more link on a feed that is
+        already there. A feed that is not there yet is made, kept for good
+        (``keep_days`` 0) — an issue is read once, and a story pruned after a
+        month does not come back. Links the feed already has are left alone.
+
+        Saved through :meth:`save_config`, so the result is checked and backed
+        up like any other edit; the file is rewritten as indented JSON, which is
+        what the editor's Format button makes of it too.
+        """
+        name = name.strip() if isinstance(name, str) else ""
+        if not name:
+            raise ConfigError("Which feed? Give it a name.")
+        wanted: list[str] = []
+        for link in links if isinstance(links, list) else []:
+            link = link.strip() if isinstance(link, str) else ""
+            if not link:
+                continue
+            if not is_bayam_link(link):
+                raise ConfigError(
+                    f"{link!r} is not a Bayam magazine link (https://flyer.bayam.tv/... "
+                    "or https://app.bayam.tv/...)."
+                )
+            if link not in wanted:
+                wanted.append(link)
+        if not wanted:
+            raise ConfigError("No links to add.")
+
+        view = self.config_view()
+        if view["version"] is None:
+            raise ConfigError(view["text"])
+        try:
+            data = json.loads(view["text"]) if view["exists"] else {"feeds": []}
+        except ValueError:
+            raise ConfigError("The configuration file is not valid JSON; fix it in the editor first.")
+        feeds = data.get("feeds") if isinstance(data, dict) else None
+        if not isinstance(feeds, list):
+            raise ConfigError('The configuration file has no "feeds" list; fix it in the editor first.')
+
+        at = next((i for i, f in enumerate(feeds) if isinstance(f, dict) and f.get("name") == name), None)
+        if at is None:
+            have: list[str] = []
+            entry: dict = {"name": name, "keep_days": 0}
+        else:
+            entry = feeds[at]
+            more = entry.get("urls")
+            have = [u for u in [entry.get("url"), *(more if isinstance(more, list) else [])]
+                    if isinstance(u, str) and u.strip()]
+            if not all(is_bayam_link(u) for u in have):
+                raise ConfigError(f"{name!r} is not a Bayam feed; its links are not Bayam's.")
+        added = [link for link in wanted if link not in have]
+        result = {"feed": name, "added": added, "already": len(wanted) - len(added), "created": at is None}
+        if not added:
+            return result
+
+        # Where the feed said "url" or "urls" it now says "urls", in the same place.
+        merged: dict = {}
+        for key, value in entry.items():
+            if key in ("url", "urls"):
+                merged.setdefault("urls", have + added)
+            else:
+                merged[key] = value
+        if "urls" not in merged:
+            merged = {"name": merged.pop("name"), "urls": added, **merged}
+        if at is None:
+            feeds.append(merged)
+        else:
+            feeds[at] = merged
+        self.save_config(json.dumps(data, indent=2, ensure_ascii=False), view["version"])
+        return result
+
 
 class ConfigConflict(Exception):
     """The config file changed since the editor read it."""
@@ -587,6 +663,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.ACCEPTED, svc.run(dry_run=bool(body.get("dry_run")), only=only).view())
         elif path == "/api/prune":
             self._json(HTTPStatus.ACCEPTED, svc.prune().view())
+        elif path == "/api/bayam":
+            try:
+                self._json(HTTPStatus.OK, svc.add_bayam_links(body.get("feed"), body.get("links")))
+            except ConfigConflict as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+            except (FeedError, ValueError, TypeError) as exc:
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": _untemp(str(exc))})
+            except OSError as exc:
+                self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not save: {exc}"})
         else:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found."})
 

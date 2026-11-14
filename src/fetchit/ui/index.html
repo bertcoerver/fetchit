@@ -59,6 +59,11 @@
                     font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   textarea#config:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   .config-line { margin: 6px 0 0; font-size: 13px; min-height: 1.4em; }
+  .field { display: block; margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .field input, .field textarea { display: block; width: 100%; margin-top: 3px; background: var(--code); color: var(--text);
+                                  border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; }
+  .field textarea { min-height: 76px; resize: vertical; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .field input:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 </style>
 </head>
 <body>
@@ -93,6 +98,22 @@
           <tbody id="feeds"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="wide">
+      <h2>Add Bayam magazines</h2>
+      <label class="field">Feed
+        <input id="bayam-feed" list="bayam-feeds" placeholder="Mes premières Belles Histoires" autocomplete="off">
+        <datalist id="bayam-feeds"></datalist>
+      </label>
+      <label class="field">Links from the magazine, one per line
+        <textarea id="bayam-links" spellcheck="false" autocapitalize="off" placeholder="https://flyer.bayam.tv/4sYB/dj8"></textarea>
+      </label>
+      <div class="actions">
+        <button class="primary" id="bayam-add-run" data-bayam="run">Add and download</button>
+        <button id="bayam-add" data-bayam="add">Add only</button>
+      </div>
+      <p class="config-line muted" id="bayam-line">Adds the links to the feed in the configuration. A feed name that does not exist yet makes a new feed, kept for good.</p>
     </section>
 
     <section>
@@ -182,6 +203,9 @@ async function loadFeeds() {
         <td class="nowrap"><button class="small" data-feed="${esc(f.name)}" data-dry="1">Dry run</button> <button class="small" data-feed="${esc(f.name)}">Run</button></td>
       </tr>`;
     }).join("");
+    const mags = feeds.filter(f => f.bayam);
+    $("bayam-feeds").innerHTML = mags.map(f => `<option value="${esc(f.name)}">`).join("");
+    if (!$("bayam-feed").value && mags.length) $("bayam-feed").value = mags[0].name;
     document.querySelectorAll("[data-feed]").forEach(b => b.addEventListener("click", () =>
       start("api/run", {dry_run: !!b.dataset.dry, feeds: [b.dataset.feed]})));
     setRunning(!!watching);
@@ -275,6 +299,28 @@ $("config-format").addEventListener("click", () => {
   checkConfig();
 });
 window.addEventListener("beforeunload", (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ""; } });
+
+// Bayam: a new issue is one more link on a feed. Whatever was pasted, the links
+// are picked out of it, so a line from an email or a note works as well.
+function bayamLine(html, cls = "muted") { $("bayam-line").className = "config-line " + cls; $("bayam-line").innerHTML = html; }
+
+async function addBayam(thenRun) {
+  const feed = $("bayam-feed").value.trim();
+  const links = $("bayam-links").value.match(/https?:\/\/(?:flyer|app)\.bayam\.tv\/[^\s"'<>,;]+/gi) || [];
+  if (!feed) return bayamLine("Which feed? Give it a name.", "bad");
+  if (!links.length) return bayamLine("No Bayam link there. They look like <code>https://flyer.bayam.tv/4sYB/dj8</code>.", "bad");
+  if (dirty()) return bayamLine("The configuration below has unsaved changes. Save or revert them first.", "bad");
+  try {
+    const r = await api("api/bayam", {method: "POST", body: {feed, links}});
+    const said = [`${r.added.length} link(s) added to ${esc(r.feed)}` + (r.created ? " (a new feed)" : "")];
+    if (r.already) said.push(`${r.already} already there`);
+    bayamLine(said.join(", ") + ".", r.added.length ? "ok" : "warn");
+    if (r.added.length) $("bayam-links").value = "";
+    await loadConfig(true); loadStatus(); loadFeeds(); loadActivity();
+    if (thenRun && r.added.length && !watching) start("api/run", {feeds: [r.feed]});
+  } catch (e) { bayamLine(esc(e.message), "bad"); }
+}
+document.querySelectorAll("[data-bayam]").forEach(b => b.addEventListener("click", () => addBayam(b.dataset.bayam === "run")));
 
 function setRunning(on) { document.querySelectorAll("[data-run], [data-feed]").forEach(b => b.disabled = on); }
 
