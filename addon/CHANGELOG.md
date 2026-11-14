@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Add functionality to manage Bayam magazine links in the UI and backend
+
 ## 0.1.2
 
 - Edit fetchit.json from the panel, checked the way a run reads it
