@@ -624,7 +624,14 @@ def _read(url: str, *, conditional: bool = True) -> feedparser.FeedParserDict:
         for name in ("etag", "modified")
         if isinstance(known, dict) and known.get(name)
     }
-    parsed = feedparser.parse(url, **conditional_args)
+    try:
+        parsed = feedparser.parse(url, **conditional_args)
+    except OSError as exc:
+        # feedparser folds a URLError into a bozo result, but only that: a
+        # timeout or reset while *reading* the answer, after the connection was
+        # made, comes out as itself. Wrapped here so it is retried like any
+        # other network failure instead of escaping as a bare traceback.
+        raise FeedError(f"Could not read feed {url!r}: {exc}") from exc
 
     if getattr(parsed, "status", None) == 304:
         # Unchanged since last time; there is no body to look at and no reason to

@@ -219,6 +219,35 @@ def test_parse_feed_retries_when_the_feed_could_not_be_reached(monkeypatch):
     assert len(calls) == 3
 
 
+def test_parse_feed_retries_a_read_timeout(monkeypatch):
+    # feedparser lets a timeout during the read escape as itself rather than
+    # folding it into a bozo result.
+    calls = []
+
+    def slow(url, **kwargs):
+        calls.append(url)
+        if len(calls) < 3:
+            raise TimeoutError("The read operation timed out")
+        return _parsed([{"title": "Ep", "link": _MP3}])
+
+    monkeypatch.setattr(feeds.feedparser, "parse", slow)
+    monkeypatch.setattr(feeds.time, "sleep", lambda _: None)
+
+    assert parse_feed(FeedConfig(url="https://a")).items
+    assert len(calls) == 3
+
+
+def test_parse_feed_reports_a_persistent_read_timeout_as_a_feed_error(monkeypatch):
+    def slow(url, **kwargs):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(feeds.feedparser, "parse", slow)
+    monkeypatch.setattr(feeds.time, "sleep", lambda _: None)
+
+    with pytest.raises(FeedError, match="timed out"):
+        parse_feed(FeedConfig(url="https://a"))
+
+
 def test_parse_feed_does_not_retry_malformed_markup(monkeypatch):
     calls = []
 
