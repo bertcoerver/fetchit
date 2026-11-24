@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.10
+
+- Send fetchit's own User-Agent with every download
+
 ## 0.1.9
 
 - Name artwork for what it is, and show a Bayam magazine by its logo
