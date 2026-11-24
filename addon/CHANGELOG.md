@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Keep a feed's links in a file of their own, one tab per list in the panel
+
 ## 0.1.4
 
 - Retry feeds that time out while being read instead of failing the run with a traceback
