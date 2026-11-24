@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.14
+
+- Tell other programs when a run downloaded something
+
 ## 0.1.13
 
 - Forget an episode so the next run fetches it again
