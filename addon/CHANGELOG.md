@@ -2,7 +2,7 @@
 
 ## 0.1.11
 
-- First release installed from the add-on repository.
+- Move the workflows' actions onto Node 24
 
 ## 0.1.10
 

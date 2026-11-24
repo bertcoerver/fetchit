@@ -119,11 +119,15 @@ jobs:
 
       - name: Write the changelog
         run: |
+          # This workflow counts as part of the add-on: it decides how the
+          # images are built, so a change to it is a change to what ships.
           previous="$(git describe --tags --abbrev=0 --match 'addon-v*' 2>/dev/null || true)"
-          if [ -n "${previous}" ]; then
-            notes="$(git log --no-merges --format='- %s' "${previous}..HEAD" -- src addon pyproject.toml)"
+          if [ -z "${previous}" ]; then
+            notes="- First release installed from the add-on repository."
+          else
+            notes="$(git log --no-merges --format='- %s' "${previous}..HEAD" -- src addon pyproject.toml .github/workflows/addon.yml)"
+            notes="${notes:-- Rebuilt with no changes to the add-on itself.}"
           fi
-          notes="${notes:-- First release installed from the add-on repository.}"
           body="$(sed '1{/^# Changelog$/d;}' addon/CHANGELOG.md)"
           printf '# Changelog\n\n## %s\n\n%s\n%s\n' "${VERSION}" "${notes}" "${body}" > addon/CHANGELOG.md
 
