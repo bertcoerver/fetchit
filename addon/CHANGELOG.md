@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.7
+
+- Read Les Mini Mondes magazine links, and take only readable links into a link list
+
 ## 0.1.6
 
 - Take everything behind a link list's links, however old
