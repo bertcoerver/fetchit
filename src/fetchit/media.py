@@ -4,7 +4,8 @@ An item is one of three kinds, decided per item from what it already says, with
 nothing to configure:
 
 ``audio``
-    It carries an audio enclosure — a podcast episode — or is a Bayam track.
+    It carries an audio enclosure — a podcast episode — or is a Bayam track or a Les Mini
+    Mondes story.
 ``video``
     It links to a video fetchit knows how to get (an ARTE programme, a YouTube
     video, an NPO Start episode), or carries a video enclosure of its own.
@@ -132,8 +133,9 @@ def kind_of(item: FeedItem) -> str:
     episode's page on YouTube is still a podcast.
     """
     from .bayam import is_bayam_item
+    from .minimondes import is_minimondes_item
 
-    if is_bayam_item(item) or is_audio_item(item):
+    if is_bayam_item(item) or is_minimondes_item(item) or is_audio_item(item):
         return AUDIO
     if is_video_item(item) or is_video_enclosure(item):
         return VIDEO
@@ -151,10 +153,11 @@ def item_id(item: FeedItem) -> str:
     """
     from .arte import arte_program_id
     from .bayam import is_bayam_item
+    from .minimondes import is_minimondes_item
     from .npo import npo_episode_slug
     from .youtube import youtube_video_id
 
-    if is_bayam_item(item) and item.extra.get("id"):
+    if (is_bayam_item(item) or is_minimondes_item(item)) and item.extra.get("id"):
         return item.extra["id"]
     if not is_audio_item(item):
         if video := youtube_video_id(item.link):
@@ -200,10 +203,12 @@ def resolve(item: FeedItem, quality: Quality = Quality()) -> Plan:
     source has nothing usable right now, or (with a size budget) nothing fits;
     one of :data:`PERMANENT` if it never will.
     """
-    from . import arte, bayam, npo, youtube
+    from . import arte, bayam, minimondes, npo, youtube
 
     if bayam.is_bayam_item(item):
         return bayam.resolve(item)
+    if minimondes.is_minimondes_item(item):
+        return minimondes.resolve(item)
     if is_audio_item(item):
         return EnclosurePlan(item.enclosure_url or "", ".mp3")
     if arte.arte_program_id(item.link):
@@ -224,6 +229,7 @@ def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:
     """
     from .arte import arte_collection_id, parse_arte_collection
     from .bayam import is_bayam_link, parse_bayam
+    from .minimondes import is_minimondes_link, parse_minimondes
     from .npo import npo_series, parse_npo_series
 
     if arte_collection_id(cfg.url):
@@ -232,6 +238,38 @@ def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:
         return parse_npo_series(cfg)
     if is_bayam_link(cfg.url):
         return parse_bayam(cfg)
+    if is_minimondes_link(cfg.url):
+        return parse_minimondes(cfg)
+    return None
+
+
+def link_source(url: str | None) -> str | None:
+    """Which source reads ``url`` as a feed of its own, told from the address alone.
+
+    What a link list will take: a Bayam or Les Mini Mondes magazine link, an ARTE collection, an
+    NPO Start series or a YouTube channel. ``None`` for anything else — which
+    may still be a perfectly good RSS feed, but nothing short of reading it
+    tells, and such a feed is one ``url`` of its own rather than a line in a
+    list.
+    """
+    from .arte import arte_collection_id
+    from .bayam import is_magazine_link
+    from .minimondes import is_minimondes_link
+    from .npo import npo_series
+    from .youtube import YOUTUBE_CHANNEL_RE
+
+    if not url:
+        return None
+    if is_magazine_link(url):
+        return "Bayam"
+    if is_minimondes_link(url):
+        return "Les Mini Mondes"
+    if arte_collection_id(url):
+        return "ARTE"
+    if npo_series(url):
+        return "NPO Start"
+    if YOUTUBE_CHANNEL_RE.search(url) and "/feeds/videos.xml" not in url:
+        return "YouTube"
     return None
 
 
@@ -292,6 +330,7 @@ def source_image(url: str) -> str | None:
     """
     from .arte import arte_collection_id, collection_image
     from .bayam import is_bayam_link, magazine_image
+    from .minimondes import is_minimondes_link, story_image
     from .npo import npo_series, series_image
     from .youtube import channel_image
 
@@ -301,6 +340,8 @@ def source_image(url: str) -> str | None:
         return series_image(url)
     if is_bayam_link(url):
         return magazine_image(url)
+    if is_minimondes_link(url):
+        return story_image(url)
     return channel_image(url)
 
 

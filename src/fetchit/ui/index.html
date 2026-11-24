@@ -64,6 +64,7 @@
                                   border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; }
   .field textarea { min-height: 76px; resize: vertical; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .field input:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .field textarea[aria-invalid="true"] { outline: 2px solid var(--bad); outline-offset: -1px; }
   .tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 0 12px; }
   .tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 7px 7px 0 0; background: none;
                  color: var(--muted); padding: 6px 12px; margin-bottom: -1px; }
@@ -116,7 +117,7 @@
       <label class="field hidden" id="list-name-field">Name of the new feed
         <input id="list-name" placeholder="Mes premières Belles Histoires" autocomplete="off">
       </label>
-      <label class="field">Links to add, one per line
+      <label class="field">Links to add, one per line — Bayam or Les Mini Mondes magazine links, ARTE collections, NPO Start series or YouTube channels
         <textarea id="list-add" spellcheck="false" autocapitalize="off" placeholder="https://flyer.bayam.tv/4sYB/dj8"></textarea>
       </label>
       <div class="actions">
@@ -340,17 +341,51 @@ function showLists(found) {
       `<button class="small" data-unlink="${esc(u)}" ${last ? "disabled title=\"A feed needs at least one link\"" : ""}>Remove</button></li>`).join("");
     $("list-links").querySelectorAll("[data-unlink]").forEach(b => b.addEventListener("click", () => removeLink(f.name, b.dataset.unlink)));
   } else {
-    $("list-about").innerHTML = "A feed made of separate links — the ones printed in each issue of a Bayam magazine, for instance. " +
+    $("list-about").innerHTML = "A feed made of separate links — the ones printed in each issue of a Bayam or Les Mini Mondes magazine, for instance. " +
       "Name it and give it its first links: its list is kept in a file of its own, and the feed is kept for good. " +
       "Naming a feed that lists its links in the configuration moves them to a file.";
   }
 }
 
+// The links fetchit reads as a feed of their own, told by their address — the
+// same as fetchit.media.link_source, which has the last word: this is only so
+// the box says what is wrong before anything is sent.
+const LINK_SOURCES = [
+  ["Bayam", u => (u.hostname === "flyer.bayam.tv" && u.pathname.split("/").filter(Boolean).length >= 1) ||
+                 (u.hostname === "app.bayam.tv" && /^\/mag\/[^/]+\/?$/.test(u.pathname))],
+  ["Les Mini Mondes", u => u.hostname === "activites.lesminimondes.fr" &&
+                   (/^\/activites\/[^/]+\/?$/.test(u.pathname) ||
+                    (/^\/activites\/?$/.test(u.pathname) && !!(u.searchParams.get("pays") || "").trim()))],
+  ["ARTE", u => /^(www\.)?arte\.tv$/.test(u.hostname) && /^\/[a-z]{2}\/videos\/RC-\d+(\/|$)/i.test(u.pathname)],
+  ["NPO Start", u => /^(www\.)?npo\.nl$/.test(u.hostname) && /^\/start\/serie\/[\w-]+(\/afleveringen(\/[\w-]+)?)?\/?$/i.test(u.pathname)],
+  ["YouTube", u => /^((www|m)\.)?youtube\.com$/.test(u.hostname) &&
+                   /^\/(channel\/UC[\w-]+|@[\w.-]+|c\/[\w.-]+|user\/[\w.-]+)(\/[\w-]*)?\/?$/.test(u.pathname)],
+];
+function linkSource(link) {
+  let u; try { u = new URL(link); } catch (e) { return null; }
+  if (!/^https?:$/.test(u.protocol)) return null;
+  u = {hostname: u.hostname.toLowerCase(), pathname: u.pathname, searchParams: u.searchParams};
+  return (LINK_SOURCES.find(([, test]) => test(u)) || [null])[0];
+}
+const pastedLinks = () => $("list-add").value.match(/https?:\/\/[^\s"'<>,;]+/gi) || [];
+function refusedLinks() { return pastedLinks().filter(l => !linkSource(l)); }
+
+function checkPasted() {
+  const refused = refusedLinks();
+  $("list-add").setAttribute("aria-invalid", refused.length ? "true" : "false");
+  document.querySelectorAll("[data-list-add]").forEach(b => b.disabled = refused.length > 0);
+  if (refused.length) listLine("Not a link fetchit can read: " + refused.map(l => `<code>${esc(l)}</code>`).join(", ") +
+    ". A link list takes Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels.", "bad");
+  else if ($("list-line").classList.contains("bad")) listLine("");
+}
+$("list-add").addEventListener("input", checkPasted);
+
 async function addLinks(thenRun) {
   const feed = activeList === NEW ? $("list-name").value.trim() : activeList;
-  const links = $("list-add").value.match(/https?:\/\/[^\s"'<>,;]+/gi) || [];
+  const links = pastedLinks();
   if (!feed) return listLine("Which feed? Give it a name.", "bad");
   if (!links.length) return listLine("No link there. Links start with <code>https://</code>.", "bad");
+  if (refusedLinks().length) return checkPasted();
   const making = activeList === NEW;
   if (making && dirty()) return listLine("The configuration below has unsaved changes. Save or revert them first.", "bad");
   try {

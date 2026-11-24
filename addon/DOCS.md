@@ -53,9 +53,12 @@ everything, or one feed, for real or as a dry run, and prune now; what a run
 prints is shown as it goes. Below that: recent downloads and the log.
 
 **Link lists** has a tab for every feed whose links are kept in a file of their
-own (a `urls_file`, such as Bayam magazines: the link printed in each issue). A
+own (a `urls_file`, such as Bayam or Les Mini Mondes magazines: the link printed in
+each issue). A
 tab shows the feed's links; paste a new one (or several) and **Add and
-download** fetches it straight away. Links are added to that feed's file, not to
+download** fetches it straight away. Only links fetchit can read as a feed are taken —
+Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels;
+anything else is refused, with the offending links named. Links are added to that feed's file, not to
 `fetchit.json`. The **New list** tab makes a new feed, kept for good, with its
 links in `lists/<name>.txt` beside `fetchit.json` — the config gains the feed,
 with the same check and `.bak` as below.

@@ -161,3 +161,26 @@ def test_channel_feed_url_leaves_an_ordinary_url_alone():
 
 def test_permanent_reasons_are_the_three_not_worth_retrying():
     assert set(media.PERMANENT) == {media.VideoTooShort, media.VideoTooBig, media.VideoGone}
+
+
+@pytest.mark.parametrize("url, source", [
+    ("https://flyer.bayam.tv/4sYB/dj8", "Bayam"),
+    ("https://app.bayam.tv/mag/abc", "Bayam"),
+    ("https://www.arte.tv/fr/videos/RC-014035/le-dessous-des-cartes/", "ARTE"),
+    ("https://npo.nl/start/serie/nos-journaal", "NPO Start"),
+    ("https://npo.nl/start/serie/nos-journaal/afleveringen/seizoen-1", "NPO Start"),
+    ("https://www.youtube.com/@talks", "YouTube"),
+    ("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv", "YouTube"),
+    ("https://flyer.bayam.tv/", None),
+    ("https://app.bayam.tv/", None),
+    ("https://app.bayam.tv/home/abc", None),
+    ("https://www.youtube.com/feeds/videos.xml?channel_id=UCabc", None),
+    ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", None),
+    ("https://example.com/feed.xml", None),
+    ("ftp://flyer.bayam.tv/4sYB/dj8", None),
+    ("", None),
+])
+def test_link_source_is_told_from_the_address(url, source):
+    from fetchit.media import link_source
+
+    assert link_source(url) == source

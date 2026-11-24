@@ -537,6 +537,7 @@ class Service:
         wanted = _clean_links(links)
         if not wanted:
             raise ConfigError("No links to add.")
+        _check_readable(wanted)
 
         data, feeds, view = self._config_data()
         at = _feed_at(feeds, name)
@@ -648,6 +649,24 @@ def _clean_links(links) -> list[str]:
         if link not in out:
             out.append(link)
     return out
+
+
+def _check_readable(links: list[str]) -> None:
+    """Refuse ``links`` unless fetchit reads every one as a feed of its own.
+
+    See :func:`~fetchit.media.link_source`. Every link refused is named, so a
+    paste of several shows all that is wrong with it at once.
+    """
+    from .media import link_source
+
+    refused = [link for link in links if link_source(link) is None]
+    if refused:
+        raise ConfigError(
+            "Not a link fetchit can read: " + ", ".join(refused) + ". A link list takes "
+            "Bayam and Les Mini Mondes magazine links, ARTE collections, "
+            "NPO Start series and YouTube channels; an RSS feed goes in the "
+            "configuration as a feed of its own."
+        )
 
 
 def _feed_at(feeds: list, name: str) -> int | None:

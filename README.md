@@ -3,7 +3,8 @@
 Download feeds into a media library that other tools can read.
 
 fetchit reads the feeds named in a config file (RSS and podcast feeds, ARTE
-collections, NPO Start series, YouTube channels, Bayam magazine links) and
+collections, NPO Start series, YouTube channels, Bayam and Les Mini Mondes
+magazine links) and
 downloads what is new into one folder, laid out the way a media server expects:
 
 ```
@@ -150,7 +151,7 @@ pruned.
 
 Decided per item, with nothing to configure:
 
-- **audio** — an item with an audio enclosure (a podcast episode), or a Bayam track.
+- **audio** — an item with an audio enclosure (a podcast episode), or a Bayam track or Les Mini Mondes story.
   Filed under `podcasts/`, tagged for a music library.
 - **video** — an item that links to an ARTE programme, an NPO Start episode or a
   YouTube video, or carries a video enclosure. Filed under `shows/`.
@@ -237,6 +238,11 @@ The GUI shows every link list as a tab: its links, a box to paste new ones,
 first links, which go into `lists/<name>.txt`. Naming a feed that lists its
 links in the config moves them to a file.
 
+The GUI only takes links fetchit reads as a feed of their own, told from the
+address: Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start
+series and YouTube channels. Anything else is refused before it reaches the file; a plain RSS feed
+belongs in the config as a feed of its own (or in the file, by hand).
+
 ### Bayam
 
 The audio stories behind the links printed in Bayard Jeunesse magazines
@@ -245,6 +251,19 @@ of those links; add the new one each month.
 
 Each track becomes an episode, dated with the issue's release, numbered with the
 issue number, and described with the magazine it came with.
+
+### Les Mini Mondes
+
+The audio stories behind the QR code in each issue of Les Mini Mondes. An issue
+is about one country, and its code leads to that country's activities
+(`https://activites.lesminimondes.fr/activites/?...&pays=MEXIQUE`). Most are a
+PDF to print; the ones with a player — stories, songs — become episodes. A feed
+of issues is a [link list](#link-lists) of those links; a single activity's page
+(`https://activites.lesminimondes.fr/activites/<story>/`) works as a link too.
+
+The country's listing is read on every run, since activities are added after an
+issue is out; each activity's page is read once. The site gives no usable date,
+so an episode is dated by the month its mp3 was uploaded.
 
 ## Quality
 

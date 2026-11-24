@@ -123,6 +123,24 @@ def is_bayam_link(url: str | None) -> bool:
     return (urlsplit(url).hostname or "").lower() in BAYAM_HOSTS
 
 
+def is_magazine_link(url: str | None) -> bool:
+    """Whether ``url`` has the shape of a magazine link, so it may be added to a list.
+
+    Stricter than :func:`is_bayam_link`: the printed link is a short code on
+    ``flyer.bayam.tv`` (``/4sYB/dj8``), the app's is ``app.bayam.tv/mag/<code>``.
+    The bare sites, or any other page of the app, have no magazine behind them.
+    """
+    if not is_bayam_link(url):
+        return False
+    parts = urlsplit(url)
+    path = [part for part in parts.path.split("/") if part]
+    if parts.scheme not in ("http", "https"):
+        return False
+    if (parts.hostname or "").lower() == "app.bayam.tv":
+        return len(path) == 2 and path[0] == MAGAZINE_PATH
+    return len(path) >= 1
+
+
 def is_bayam_item(item: FeedItem) -> bool:
     """Whether ``item`` is a track read from a magazine link."""
     return "bayam_sku" in item.extra

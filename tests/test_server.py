@@ -258,7 +258,7 @@ def test_two_link_lists_are_two_feeds(running, tmp_path):
     start, _ = running
     base, _ = start()
     _call(base, "/api/links", {"feed": "Histoires", "links": ["https://flyer.bayam.tv/4sYB/dj8"]})
-    _call(base, "/api/links", {"feed": "Talks", "links": ["https://example.com/talk/1"]})
+    _call(base, "/api/links", {"feed": "Talks", "links": ["https://www.youtube.com/@talks"]})
     _, feeds = _call(base, "/api/feeds")
     assert [f["list"]["file"] for f in feeds["feeds"] if f["list"]] == ["lists/histoires.txt", "lists/talks.txt"]
 
@@ -292,6 +292,8 @@ def test_the_last_link_of_a_list_stays(running, tmp_path):
 
 @pytest.mark.parametrize("body, says", [
     ({"feed": "Mag", "links": ["flyer.bayam.tv/4sYB/dj8"]}, "not a link"),
+    ({"feed": "Mag", "links": ["https://example.com/feed.xml"]}, "Not a link fetchit can read"),
+    ({"feed": "Mag", "links": ["https://flyer.bayam.tv/4sYB/dj8", "https://app.bayam.tv/"]}, "https://app.bayam.tv/"),
     ({"feed": "Mag", "links": []}, "No links"),
     ({"feed": " ", "links": ["https://flyer.bayam.tv/4sYB/dj8"]}, "name"),
 ])
