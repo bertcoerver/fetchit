@@ -12,6 +12,7 @@ enclosures that show up in real-world feeds.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections.abc import Callable
@@ -75,6 +76,7 @@ WEEKDAYS = (
 KNOWN_KEYS = (
     "url",
     "urls",
+    "urls_file",
     "name",
     "extract",
     "since",
@@ -223,6 +225,9 @@ class FeedConfig:
     ``url`` is where the feed is read from. ``urls``, when given, is every such
     address with ``url`` first — for a source that is a list of links rather
     than one feed, such as the Bayam magazine links printed in each issue.
+    ``urls_file``, when set, is the (absolute) path of the file those links
+    were read from: a *link list*, which grows by a line at a time without
+    touching the config, and which the panel shows as a tab of its own.
 
     ``since`` turns the feed into a backfill: everything published after it is
     wanted, oldest first, ``max_per_run`` at a time — and, if ``max_per_day``
@@ -252,6 +257,7 @@ class FeedConfig:
     refresh_image: bool = True
     language: str | None = None
     urls: tuple[str, ...] = ()
+    urls_file: str | None = None
 
     @property
     def sources(self) -> tuple[str, ...]:
@@ -353,20 +359,26 @@ def _enclosure_kind(item: FeedItem) -> str | None:
 
 
 def load_feeds(
-    raw_feeds: object, where: str = "feeds", *, quality: Quality = Quality()
+    raw_feeds: object,
+    where: str = "feeds",
+    *,
+    quality: Quality = Quality(),
+    base_dir: str = ".",
 ) -> list[FeedConfig]:
     """Validate the ``feeds`` array of a config file into :class:`FeedConfig`\\ s.
 
-    Each feed needs a ``url`` (or ``urls``) and a ``name``, and two feeds can't
-    share a name: the name is the feed's folder. ``quality`` is the library-wide
-    default a feed's own ``quality`` is read on top of. Raises
-    :class:`FeedError` on a malformed entry, naming it.
+    Each feed needs a ``url`` (or ``urls``, or a ``urls_file``) and a ``name``,
+    and two feeds can't share a name: the name is the feed's folder.
+    ``quality`` is the library-wide default a feed's own ``quality`` is read on
+    top of; ``base_dir`` is what a relative ``urls_file`` is relative to — the
+    config file's folder. Raises :class:`FeedError` on a malformed entry, naming
+    it.
     """
     if not isinstance(raw_feeds, list):
         raise FeedError(f"{where} must be an array of feeds.")
 
     feeds = [
-        _build_feed_config(raw, f"{where}[{i}]", quality)
+        _build_feed_config(raw, f"{where}[{i}]", quality, base_dir)
         for i, raw in enumerate(raw_feeds)
     ]
     seen: dict[str, str] = {}
@@ -381,12 +393,15 @@ def load_feeds(
     return feeds
 
 
-def _build_feed_config(raw: object, where: str, base: Quality = Quality()) -> FeedConfig:
+def _build_feed_config(
+    raw: object, where: str, base: Quality = Quality(), base_dir: str = "."
+) -> FeedConfig:
     """Validate one raw feed entry and turn it into a :class:`FeedConfig`."""
     if not isinstance(raw, dict):
         raise FeedError(f"{where} must be an object.")
 
-    urls = _build_urls(raw, where)
+    urls_file = _build_urls_file(raw, where, base_dir)
+    urls = read_links(urls_file, where) if urls_file else _build_urls(raw, where)
 
     name = raw.get("name")
     if not isinstance(name, str) or not name.strip():
@@ -427,6 +442,7 @@ def _build_feed_config(raw: object, where: str, base: Quality = Quality()) -> Fe
     return FeedConfig(
         url=urls[0],
         urls=urls if len(urls) > 1 else (),
+        urls_file=urls_file,
         name=name.strip(),
         filters=_build_filters(raw, where),
         extract=_build_extracts(raw.get("extract"), where),
@@ -438,6 +454,52 @@ def _build_feed_config(raw: object, where: str, base: Quality = Quality()) -> Fe
         refresh_image=refresh_image,
         language=language.strip() if isinstance(language, str) else None,
     )
+
+
+def _build_urls_file(raw: dict, where: str, base_dir: str) -> str | None:
+    """The absolute path of the feed's link list, if it has one."""
+    path = raw.get("urls_file")
+    if path is None:
+        return None
+    if not isinstance(path, str) or not path.strip():
+        raise FeedError(f"{where} urls_file must be the path of a file, one link per line.")
+    if raw.get("url") is not None or raw.get("urls") is not None:
+        raise FeedError(
+            f"{where} has a urls_file and a url (or urls). A feed is read from one "
+            "or the other; put every link in the file."
+        )
+    return os.path.normpath(os.path.join(base_dir, os.path.expanduser(path.strip())))
+
+
+def read_links(path: str, where: str = "") -> tuple[str, ...]:
+    """The links in the link list at ``path``, in order, each once.
+
+    One link per line; blank lines and lines starting with ``#`` are skipped,
+    so a list can carry notes ("# September") between its links. Raises
+    :class:`FeedError` if the file cannot be read or holds no link.
+    """
+    said = f"{where} urls_file {path!r}" if where else repr(path)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError as exc:
+        raise FeedError(f"{said} does not exist. Make it, one link per line.") from exc
+    except OSError as exc:
+        raise FeedError(f"{said} cannot be read: {exc.strerror or exc}") from exc
+    links = parse_links(lines)
+    if not links:
+        raise FeedError(f"{said} has no links in it; a feed needs at least one.")
+    return tuple(links)
+
+
+def parse_links(lines: list[str]) -> tuple[str, ...]:
+    """The links among the lines of a link list: not blank, not ``# notes``, each once."""
+    links: list[str] = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and line not in links:
+            links.append(line)
+    return tuple(links)
 
 
 def _build_urls(raw: dict, where: str) -> tuple[str, ...]:
@@ -456,7 +518,7 @@ def _build_urls(raw: dict, where: str) -> tuple[str, ...]:
             raise FeedError(f"{where} urls must be a list of non-empty strings.")
         urls.extend(u.strip() for u in more if u.strip() not in urls)
     if not urls:
-        raise FeedError(f"{where} is missing a \"url\" (or a \"urls\" list).")
+        raise FeedError(f"{where} is missing a \"url\" (or a \"urls\" list, or a \"urls_file\").")
     return tuple(urls)
 
 

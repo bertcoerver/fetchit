@@ -32,7 +32,7 @@
     },
     {
       "name": "Mes premières Belles Histoires",
-      "urls": ["https://flyer.bayam.tv/4sYB/dj8", "https://flyer.bayam.tv/4sYB/pmo"],
+      "urls_file": "lists/mes-premieres-belles-histoires.txt",
       "keep_days": 0
     },
     {

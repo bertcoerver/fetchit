@@ -125,7 +125,9 @@ def load_config(path: str | None = None, *, library: str | None = None) -> Confi
         library=os.path.abspath(os.path.expanduser(root)),
         keep_days=keep_days,
         quality=quality,
-        feeds=load_feeds(data["feeds"], quality=quality),
+        feeds=load_feeds(
+            data["feeds"], quality=quality, base_dir=os.path.dirname(os.path.abspath(path))
+        ),
     )
 
 

@@ -216,58 +216,91 @@ def test_a_first_config_can_be_written_from_the_panel(running, tmp_path):
     assert status == 200 and saved["exists"] and saved["feeds"] == 0
 
 
-def test_the_panel_adds_bayam_links_to_a_feed(running, tmp_path):
+def test_the_panel_makes_a_link_list_and_adds_to_it(running, tmp_path):
     start, _ = running
     base, _ = start()
     config = tmp_path / "fetchit.json"
     before = config.read_text()
     one, two, three = (f"https://flyer.bayam.tv/4sYB/{code}" for code in ("dj8", "pmo", "3v2"))
 
-    # A feed that isn't there yet is made, and kept for good.
-    status, answer = _call(base, "/api/bayam", {"feed": "Histoires", "links": [one]})
+    # A feed that isn't there yet is made, with its links in a file, kept for good.
+    status, answer = _call(base, "/api/links", {"feed": "Mes premières Histoires", "links": [one]})
     assert status == 200, answer
-    assert answer == {"feed": "Histoires", "added": [one], "already": 0, "created": True}
-    assert json.loads(config.read_text())["feeds"][-1] == {"name": "Histoires", "urls": [one], "keep_days": 0}
+    assert answer == {"feed": "Mes premières Histoires", "added": [one], "already": 0, "created": True,
+                      "file": "lists/mes-premieres-histoires.txt"}
+    assert json.loads(config.read_text())["feeds"][-1] == {
+        "name": "Mes premières Histoires", "urls_file": "lists/mes-premieres-histoires.txt", "keep_days": 0}
+    links = tmp_path / "lists" / "mes-premieres-histoires.txt"
+    assert links.read_text() == one + "\n"
     assert (tmp_path / "fetchit.json.bak").read_text() == before
 
-    # A new issue is one more link; one it has is not added twice.
-    status, answer = _call(base, "/api/bayam", {"feed": "Histoires", "links": [two, one, f" {three} "]})
+    # A new issue is one more line in the file; the config is not touched.
+    saved = config.read_text()
+    links.write_text(f"# September\n{one}\n")
+    status, answer = _call(base, "/api/links", {"feed": "Mes premières Histoires", "links": [two, one, f" {three} "]})
     assert status == 200, answer
-    assert answer == {"feed": "Histoires", "added": [two, three], "already": 1, "created": False}
-    data = json.loads(config.read_text())
-    assert data["feeds"][-1] == {"name": "Histoires", "urls": [one, two, three], "keep_days": 0}
-    assert len(data["feeds"]) == 3 and data["keep_days"] == 30
+    assert answer["added"] == [two, three] and answer["already"] == 1 and not answer["created"]
+    assert links.read_text() == f"# September\n{one}\n{two}\n{three}\n"
+    assert config.read_text() == saved
 
     _, feeds = _call(base, "/api/feeds")
-    assert [(f["name"], f["bayam"], f["urls"]) for f in feeds["feeds"]] == [
-        ("Blog", False, 1), ("Channel", False, 1), ("Histoires", True, 3)]
+    assert [(f["name"], f["urls"], f["list"]) for f in feeds["feeds"]] == [
+        ("Blog", 1, None), ("Channel", 1, None),
+        ("Mes premières Histoires", 3, {"file": "lists/mes-premieres-histoires.txt", "links": [one, two, three]})]
+
+    # Taking one out keeps the rest, and the notes.
+    status, answer = _call(base, "/api/links/remove", {"feed": "Mes premières Histoires", "links": [two]})
+    assert status == 200 and answer["removed"] == [two]
+    assert links.read_text() == f"# September\n{one}\n{three}\n"
 
 
-def test_a_feed_that_said_url_says_urls_in_the_same_place(running, tmp_path):
+def test_two_link_lists_are_two_feeds(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    _call(base, "/api/links", {"feed": "Histoires", "links": ["https://flyer.bayam.tv/4sYB/dj8"]})
+    _call(base, "/api/links", {"feed": "Talks", "links": ["https://example.com/talk/1"]})
+    _, feeds = _call(base, "/api/feeds")
+    assert [f["list"]["file"] for f in feeds["feeds"] if f["list"]] == ["lists/histoires.txt", "lists/talks.txt"]
+
+
+def test_a_feed_with_links_in_the_config_has_them_moved_to_a_file(running, tmp_path):
     start, _ = running
     base, _ = start()
     config = tmp_path / "fetchit.json"
     data = json.loads(config.read_text())
-    data["feeds"].insert(0, {"name": "Mag", "url": "https://flyer.bayam.tv/4sYB/dj8", "keep_days": 0})
+    data["feeds"].insert(0, {"name": "Mag", "urls": ["https://flyer.bayam.tv/4sYB/dj8"], "keep_days": 0})
     config.write_text(json.dumps(data))
-    status, answer = _call(base, "/api/bayam", {"feed": "Mag", "links": ["https://app.bayam.tv/mag/abc"]})
+    status, answer = _call(base, "/api/links", {"feed": "Mag", "links": ["https://app.bayam.tv/mag/abc"]})
     assert status == 200, answer
     entry = json.loads(config.read_text())["feeds"][0]
-    assert list(entry) == ["name", "urls", "keep_days"]
-    assert entry["urls"] == ["https://flyer.bayam.tv/4sYB/dj8", "https://app.bayam.tv/mag/abc"]
+    assert entry == {"name": "Mag", "urls_file": "lists/mag.txt", "keep_days": 0}
+    assert (tmp_path / "lists" / "mag.txt").read_text() == (
+        "https://flyer.bayam.tv/4sYB/dj8\nhttps://app.bayam.tv/mag/abc\n")
+
+
+def test_the_last_link_of_a_list_stays(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    one = "https://flyer.bayam.tv/4sYB/dj8"
+    _call(base, "/api/links", {"feed": "Mag", "links": [one]})
+    status, answer = _call(base, "/api/links/remove", {"feed": "Mag", "links": [one]})
+    assert status == 422 and "at least one link" in answer["error"]
+    assert (tmp_path / "lists" / "mag.txt").read_text() == one + "\n"
+    status, answer = _call(base, "/api/links/remove", {"feed": "Blog", "links": [one]})
+    assert status == 422 and "not a feed with a link list" in answer["error"]
 
 
 @pytest.mark.parametrize("body, says", [
-    ({"feed": "Blog", "links": ["https://flyer.bayam.tv/4sYB/dj8"]}, "not a Bayam feed"),
-    ({"feed": "Mag", "links": ["https://example.com/4sYB/dj8"]}, "not a Bayam magazine link"),
+    ({"feed": "Mag", "links": ["flyer.bayam.tv/4sYB/dj8"]}, "not a link"),
     ({"feed": "Mag", "links": []}, "No links"),
     ({"feed": " ", "links": ["https://flyer.bayam.tv/4sYB/dj8"]}, "name"),
 ])
-def test_bayam_links_that_cannot_be_added_change_nothing(running, tmp_path, body, says):
+def test_links_that_cannot_be_added_change_nothing(running, tmp_path, body, says):
     start, _ = running
     base, _ = start()
     config = tmp_path / "fetchit.json"
     before = config.read_text()
-    status, answer = _call(base, "/api/bayam", body)
+    status, answer = _call(base, "/api/links", body)
     assert status == 422 and says in answer["error"]
     assert config.read_text() == before
+    assert not (tmp_path / "lists").exists()

@@ -83,6 +83,35 @@ def test_urls_make_one_feed_of_several_addresses(tmp_path):
     assert cfg.sources == ("https://flyer.bayam.tv/a", "https://flyer.bayam.tv/b")
 
 
+def test_urls_file_is_a_list_of_links_beside_the_config(tmp_path):
+    (tmp_path / "lists").mkdir()
+    (tmp_path / "lists" / "mags.txt").write_text(
+        "# September\nhttps://flyer.bayam.tv/a\n\n  https://flyer.bayam.tv/b  \nhttps://flyer.bayam.tv/a\n")
+    feed = {"name": "Mags", "urls_file": "lists/mags.txt"}
+    (cfg,) = load_config(_config(tmp_path, _feeds(feed))).feeds
+    assert cfg.sources == ("https://flyer.bayam.tv/a", "https://flyer.bayam.tv/b")
+    assert cfg.urls_file == str(tmp_path / "lists" / "mags.txt")
+
+
+def test_a_single_link_in_a_urls_file_is_still_a_list(tmp_path):
+    (tmp_path / "one.txt").write_text("https://flyer.bayam.tv/a\n")
+    (cfg,) = load_config(_config(tmp_path, _feeds({"name": "Mags", "urls_file": "one.txt"}))).feeds
+    assert cfg.url == "https://flyer.bayam.tv/a" and cfg.urls_file
+
+
+@pytest.mark.parametrize("feed, content, message", [
+    ({"name": "M", "urls_file": "missing.txt"}, None, "does not exist"),
+    ({"name": "M", "urls_file": "empty.txt"}, "# nothing yet\n\n", "no links"),
+    ({"name": "M", "urls_file": "x.txt", "url": "https://a"}, "https://b\n", "one or the other"),
+    ({"name": "M", "urls_file": ""}, None, "path of a file"),
+])
+def test_a_urls_file_has_to_have_links(tmp_path, feed, content, message):
+    if content is not None:
+        (tmp_path / feed["urls_file"]).write_text(content)
+    with pytest.raises(FeedError, match=message):
+        load_config(_config(tmp_path, _feeds(feed)))
+
+
 def test_names_have_to_be_unique(tmp_path):
     data = _feeds(FEED, {"name": "blog", "url": "https://b"})
     with pytest.raises(FeedError, match="unique"):

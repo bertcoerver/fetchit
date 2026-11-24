@@ -100,7 +100,7 @@ Each feed:
 | Key | | |
 |---|---|---|
 | `name` | required | The feed's folder in the library, and what rssignal and db-podcast call it. Unique. |
-| `url` / `urls` | required | Where it is read from. `urls` is a list, for a feed made of several links (Bayam). |
+| `url` / `urls` / `urls_file` | required | Where it is read from. `urls` is a list, for a feed made of several links; `urls_file` is a file of such links, one per line — a [link list](#link-lists). |
 | `since` | optional | Backfill: everything published since this date, oldest first. See [what is new](#what-is-new). |
 | `max_per_run` | optional | At most this many downloads per run (default 10); the rest wait for the next run. |
 | `max_per_day` | optional | At most this many in any 24 hours — to keep a backfill in step with something sending it on at a pace. |
@@ -205,17 +205,41 @@ FETCHIT_YOUTUBE_COOKIES=~/.config/fetchit/youtube-cookies.txt
 
 Use a throwaway Google account: the cookies are a live session.
 
-### Bayam
+### Link lists
 
-The audio stories behind the links printed in Bayard Jeunesse magazines. A feed of
-magazines is a list of those links; add the new one each month:
+Some feeds are not one address but a list of separate links that grows over time —
+the link printed in each issue of a magazine, say. Such a feed names a file that
+holds its links, one per line, relative to the config file:
 
 ```json
 {"name": "Mes premières Belles Histoires",
- "urls": ["https://flyer.bayam.tv/4sYB/dj8", "https://flyer.bayam.tv/4sYB/pmo"]}
+ "urls_file": "lists/mes-premieres-belles-histoires.txt",
+ "keep_days": 0}
 ```
 
-The GUI has a box for this: paste the link, name the feed, **Add and download**.
+```text
+# lists/mes-premieres-belles-histoires.txt
+https://flyer.bayam.tv/4sYB/dj8
+# October
+https://flyer.bayam.tv/4sYB/pmo
+```
+
+Blank lines and `# notes` are skipped. Each link is read the way its own `url`
+would be, and their items make one feed. Adding a link is a line in the file;
+the config stays as it is. A file that is missing or holds no link is an error,
+like any other malformed feed. (`urls`, the same list inline in the config,
+works too.)
+
+The GUI shows every link list as a tab: its links, a box to paste new ones,
+**Add and download**. Its last tab, **New list**, makes a feed: the name and the
+first links, which go into `lists/<name>.txt`. Naming a feed that lists its
+links in the config moves them to a file.
+
+### Bayam
+
+The audio stories behind the links printed in Bayard Jeunesse magazines
+(`https://flyer.bayam.tv/...`). A feed of magazines is a [link list](#link-lists)
+of those links; add the new one each month.
 
 Each track becomes an episode, dated with the issue's release, numbered with the
 issue number, and described with the magazine it came with.

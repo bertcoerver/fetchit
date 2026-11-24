@@ -64,6 +64,14 @@
                                   border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; font: inherit; }
   .field textarea { min-height: 76px; resize: vertical; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   .field input:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 0 12px; }
+  .tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 7px 7px 0 0; background: none;
+                 color: var(--muted); padding: 6px 12px; margin-bottom: -1px; }
+  .tabs button[aria-selected="true"] { border-color: var(--line); background: var(--card); color: var(--text); font-weight: 600; }
+  .tabs button .count { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 4px; }
+  ul.links { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13.5px; max-height: 240px; overflow: auto; }
+  ul.links li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  ul.links li a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -101,19 +109,21 @@
     </section>
 
     <section class="wide">
-      <h2>Add Bayam magazines</h2>
-      <label class="field">Feed
-        <input id="bayam-feed" list="bayam-feeds" placeholder="Mes premières Belles Histoires" autocomplete="off">
-        <datalist id="bayam-feeds"></datalist>
+      <h2>Link lists</h2>
+      <div class="tabs" role="tablist" id="list-tabs"></div>
+      <p class="muted" id="list-about" style="font-size:13px;margin:0 0 8px"></p>
+      <ul class="links" id="list-links"></ul>
+      <label class="field hidden" id="list-name-field">Name of the new feed
+        <input id="list-name" placeholder="Mes premières Belles Histoires" autocomplete="off">
       </label>
-      <label class="field">Links from the magazine, one per line
-        <textarea id="bayam-links" spellcheck="false" autocapitalize="off" placeholder="https://flyer.bayam.tv/4sYB/dj8"></textarea>
+      <label class="field">Links to add, one per line
+        <textarea id="list-add" spellcheck="false" autocapitalize="off" placeholder="https://flyer.bayam.tv/4sYB/dj8"></textarea>
       </label>
       <div class="actions">
-        <button class="primary" id="bayam-add-run" data-bayam="run">Add and download</button>
-        <button id="bayam-add" data-bayam="add">Add only</button>
+        <button class="primary" data-list-add="run">Add and download</button>
+        <button data-list-add="add">Add only</button>
       </div>
-      <p class="config-line muted" id="bayam-line">Adds the links to the feed in the configuration. A feed name that does not exist yet makes a new feed, kept for good.</p>
+      <p class="config-line muted" id="list-line"></p>
     </section>
 
     <section>
@@ -186,7 +196,9 @@ async function loadFeeds() {
     if (!feeds.length) { $("feeds").innerHTML = `<tr><td colspan="6" class="muted">No feeds in the config.</td></tr>`; return; }
     $("feeds").innerHTML = feeds.map(f => {
       const kinds = f.kinds.map(k => `<span class="pill">${esc(k)}</span>`).join("");
-      const source = `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(host(f.url))}</a>` + (f.urls > 1 ? ` <span class="muted">+${f.urls - 1}</span>` : "");
+      const source = f.list
+        ? `<span class="pill">list of ${f.urls} link(s)</span>`
+        : `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(host(f.url))}</a>` + (f.urls > 1 ? ` <span class="muted">+${f.urls - 1}</span>` : "");
       const settings = [
         f.since ? `backfill since ${esc(f.since)}` : (f.after ? `from ${esc(when(f.after))}` : `<span class="muted">not run yet</span>`),
         `keep ${f.keep_days ? f.keep_days + "d" : "all"}`,
@@ -203,9 +215,7 @@ async function loadFeeds() {
         <td class="nowrap"><button class="small" data-feed="${esc(f.name)}" data-dry="1">Dry run</button> <button class="small" data-feed="${esc(f.name)}">Run</button></td>
       </tr>`;
     }).join("");
-    const mags = feeds.filter(f => f.bayam);
-    $("bayam-feeds").innerHTML = mags.map(f => `<option value="${esc(f.name)}">`).join("");
-    if (!$("bayam-feed").value && mags.length) $("bayam-feed").value = mags[0].name;
+    showLists(feeds.filter(f => f.list));
     document.querySelectorAll("[data-feed]").forEach(b => b.addEventListener("click", () =>
       start("api/run", {dry_run: !!b.dataset.dry, feeds: [b.dataset.feed]})));
     setRunning(!!watching);
@@ -300,27 +310,70 @@ $("config-format").addEventListener("click", () => {
 });
 window.addEventListener("beforeunload", (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ""; } });
 
-// Bayam: a new issue is one more link on a feed. Whatever was pasted, the links
-// are picked out of it, so a line from an email or a note works as well.
-function bayamLine(html, cls = "muted") { $("bayam-line").className = "config-line " + cls; $("bayam-line").innerHTML = html; }
+// Link lists: a feed read from a file of links (its "urls_file") gets a tab.
+// A new link — say the one printed in this month's magazine — is a line in that
+// file. Whatever was pasted, the links are picked out of it, so a line from an
+// email or a note works as well. The last tab makes a new list.
+const NEW = "\u0000new";
+let lists = [], activeList = null;
 
-async function addBayam(thenRun) {
-  const feed = $("bayam-feed").value.trim();
-  const links = $("bayam-links").value.match(/https?:\/\/(?:flyer|app)\.bayam\.tv\/[^\s"'<>,;]+/gi) || [];
-  if (!feed) return bayamLine("Which feed? Give it a name.", "bad");
-  if (!links.length) return bayamLine("No Bayam link there. They look like <code>https://flyer.bayam.tv/4sYB/dj8</code>.", "bad");
-  if (dirty()) return bayamLine("The configuration below has unsaved changes. Save or revert them first.", "bad");
+function listLine(html, cls = "muted") { $("list-line").className = "config-line " + cls; $("list-line").innerHTML = html; }
+
+function showLists(found) {
+  lists = found;
+  if (activeList !== NEW && !lists.some(f => f.name === activeList)) activeList = lists.length ? lists[0].name : NEW;
+  $("list-tabs").innerHTML = lists.map(f =>
+    `<button role="tab" data-list="${esc(f.name)}" aria-selected="${f.name === activeList}">${esc(f.name)}<span class="count">${f.list.links.length}</span></button>`
+  ).join("") + `<button role="tab" data-list="${NEW}" aria-selected="${activeList === NEW}">+ New list</button>`;
+  $("list-tabs").querySelectorAll("[data-list]").forEach(b => b.addEventListener("click", () => {
+    if (activeList !== b.dataset.list) { activeList = b.dataset.list; listLine(""); }
+    showLists(lists);
+  }));
+  const f = lists.find(f => f.name === activeList);
+  $("list-name-field").classList.toggle("hidden", !!f);
+  $("list-links").classList.toggle("hidden", !f);
+  if (f) {
+    $("list-about").innerHTML = `Read from <code>${esc(f.list.file)}</code>, beside the configuration — one link per line; edit it there or here.`;
+    const last = f.list.links.length === 1;
+    $("list-links").innerHTML = f.list.links.map(u =>
+      `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` +
+      `<button class="small" data-unlink="${esc(u)}" ${last ? "disabled title=\"A feed needs at least one link\"" : ""}>Remove</button></li>`).join("");
+    $("list-links").querySelectorAll("[data-unlink]").forEach(b => b.addEventListener("click", () => removeLink(f.name, b.dataset.unlink)));
+  } else {
+    $("list-about").innerHTML = "A feed made of separate links — the ones printed in each issue of a Bayam magazine, for instance. " +
+      "Name it and give it its first links: its list is kept in a file of its own, and the feed is kept for good. " +
+      "Naming a feed that lists its links in the configuration moves them to a file.";
+  }
+}
+
+async function addLinks(thenRun) {
+  const feed = activeList === NEW ? $("list-name").value.trim() : activeList;
+  const links = $("list-add").value.match(/https?:\/\/[^\s"'<>,;]+/gi) || [];
+  if (!feed) return listLine("Which feed? Give it a name.", "bad");
+  if (!links.length) return listLine("No link there. Links start with <code>https://</code>.", "bad");
+  const making = activeList === NEW;
+  if (making && dirty()) return listLine("The configuration below has unsaved changes. Save or revert them first.", "bad");
   try {
-    const r = await api("api/bayam", {method: "POST", body: {feed, links}});
-    const said = [`${r.added.length} link(s) added to ${esc(r.feed)}` + (r.created ? " (a new feed)" : "")];
+    const r = await api("api/links", {method: "POST", body: {feed, links}});
+    const said = [`${r.added.length} link(s) added to ${esc(r.feed)}` + (r.created ? ` (a new feed, its links in <code>${esc(r.file)}</code>)` : "")];
     if (r.already) said.push(`${r.already} already there`);
-    bayamLine(said.join(", ") + ".", r.added.length ? "ok" : "warn");
-    if (r.added.length) $("bayam-links").value = "";
+    listLine(said.join(", ") + ".", r.added.length ? "ok" : "warn");
+    if (r.added.length) $("list-add").value = "";
+    if (making) { activeList = r.feed; $("list-name").value = ""; }
     await loadConfig(true); loadStatus(); loadFeeds(); loadActivity();
     if (thenRun && r.added.length && !watching) start("api/run", {feeds: [r.feed]});
-  } catch (e) { bayamLine(esc(e.message), "bad"); }
+  } catch (e) { listLine(esc(e.message), "bad"); }
 }
-document.querySelectorAll("[data-bayam]").forEach(b => b.addEventListener("click", () => addBayam(b.dataset.bayam === "run")));
+
+async function removeLink(feed, link) {
+  if (!confirm(`Remove this link from ${feed}?\n\n${link}\n\nWhat was downloaded from it stays until it is pruned.`)) return;
+  try {
+    await api("api/links/remove", {method: "POST", body: {feed, links: [link]}});
+    listLine("Removed.", "ok");
+    loadFeeds(); loadActivity();
+  } catch (e) { listLine(esc(e.message), "bad"); }
+}
+document.querySelectorAll("[data-list-add]").forEach(b => b.addEventListener("click", () => addLinks(b.dataset.listAdd === "run")));
 
 function setRunning(on) { document.querySelectorAll("[data-run], [data-feed]").forEach(b => b.disabled = on); }
 

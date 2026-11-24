@@ -18,6 +18,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -36,10 +37,9 @@ from importlib import resources
 from urllib.parse import urlsplit
 
 from . import __version__
-from .bayam import is_bayam_link
 from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
-from .feeds import FeedError
+from .feeds import FeedError, parse_links
 from .library import KIND_DIRS, feed_folders, prune, records
 from .run import AlreadyRunning, run
 from .state import State
@@ -382,8 +382,11 @@ class Service:
             out.append({
                 "name": cfg.name,
                 "url": cfg.url,
-                "bayam": all(is_bayam_link(url) for url in cfg.sources),
                 "urls": len(cfg.sources),
+                "list": {
+                    "file": os.path.relpath(cfg.urls_file, os.path.dirname(os.path.abspath(self.config_file))),
+                    "links": list(cfg.sources),
+                } if cfg.urls_file else None,
                 "kinds": [KIND_DIRS[kind] for kind, _ in feed_folders(config.library, cfg.name)],
                 "items": len(found),
                 "bytes": size,
@@ -491,37 +494,12 @@ class Service:
         log_line(f"config saved from the panel: {len(config.feeds)} feed(s)")
         return {**self.config_view(), "feeds": len(config.feeds)}
 
-    def add_bayam_links(self, name: str, links: list[str]) -> dict:
-        """Add magazine links to the Bayam feed called ``name``, in the config file.
+    # Link lists: a feed read from a file of links (``urls_file``), one tab each
+    # in the panel. A new link is a line in that file; the config is touched only
+    # to make a list.
 
-        What typing them into the editor's ``urls`` list does, without the
-        typing: a new issue of a magazine is one more link on a feed that is
-        already there. A feed that is not there yet is made, kept for good
-        (``keep_days`` 0) — an issue is read once, and a story pruned after a
-        month does not come back. Links the feed already has are left alone.
-
-        Saved through :meth:`save_config`, so the result is checked and backed
-        up like any other edit; the file is rewritten as indented JSON, which is
-        what the editor's Format button makes of it too.
-        """
-        name = name.strip() if isinstance(name, str) else ""
-        if not name:
-            raise ConfigError("Which feed? Give it a name.")
-        wanted: list[str] = []
-        for link in links if isinstance(links, list) else []:
-            link = link.strip() if isinstance(link, str) else ""
-            if not link:
-                continue
-            if not is_bayam_link(link):
-                raise ConfigError(
-                    f"{link!r} is not a Bayam magazine link (https://flyer.bayam.tv/... "
-                    "or https://app.bayam.tv/...)."
-                )
-            if link not in wanted:
-                wanted.append(link)
-        if not wanted:
-            raise ConfigError("No links to add.")
-
+    def _config_data(self) -> tuple[dict, list, dict]:
+        """The config file as data: (data, its feeds list, :meth:`config_view`)."""
         view = self.config_view()
         if view["version"] is None:
             raise ConfigError(view["text"])
@@ -532,38 +510,204 @@ class Service:
         feeds = data.get("feeds") if isinstance(data, dict) else None
         if not isinstance(feeds, list):
             raise ConfigError('The configuration file has no "feeds" list; fix it in the editor first.')
+        return data, feeds, view
 
-        at = next((i for i, f in enumerate(feeds) if isinstance(f, dict) and f.get("name") == name), None)
-        if at is None:
-            have: list[str] = []
-            entry: dict = {"name": name, "keep_days": 0}
+    def _links_path(self, path: str) -> str:
+        folder = os.path.dirname(os.path.abspath(self.config_file))
+        return os.path.normpath(os.path.join(folder, os.path.expanduser(path)))
+
+    def add_links(self, name: str, links: list[str]) -> dict:
+        """Add ``links`` to the link list of the feed called ``name``.
+
+        A feed with a ``urls_file`` gets them appended to that file; the config
+        is left alone. A feed that lists its links in the config itself
+        (``url`` / ``urls``) has them moved to a new file under
+        :data:`LISTS_DIR` first, with its ``urls_file`` in their place. A feed
+        that is not there yet is made, with a new file, kept for good
+        (``keep_days`` 0): what is behind a link like a magazine's is read once,
+        and a story pruned after a month does not come back. Links the list
+        already has are left alone.
+
+        Changes to the config go through :meth:`save_config`, so they are
+        checked and backed up like any other edit.
+        """
+        name = name.strip() if isinstance(name, str) else ""
+        if not name:
+            raise ConfigError("Which feed? Give it a name.")
+        wanted = _clean_links(links)
+        if not wanted:
+            raise ConfigError("No links to add.")
+
+        data, feeds, view = self._config_data()
+        at = _feed_at(feeds, name)
+        entry = feeds[at] if at is not None else None
+
+        if entry is not None and entry.get("urls_file") is not None:
+            if not isinstance(entry["urls_file"], str) or not entry["urls_file"].strip():
+                raise ConfigError(f"{name!r} has a urls_file that is not a path; fix it in the editor first.")
+            path = self._links_path(entry["urls_file"].strip())
+            with self._config_lock:
+                have = _links_in(path)
+                added = [link for link in wanted if link not in have]
+                if added:
+                    _write_links(path, have + added)
+            self._links_changed(name, f"{len(added)} link(s) added.", added)
+            return {"feed": name, "added": added, "already": len(wanted) - len(added),
+                    "created": False, "file": entry["urls_file"].strip()}
+
+        # A new feed, or one whose links are in the config: give it a file.
+        if entry is None:
+            have = []
         else:
-            entry = feeds[at]
             more = entry.get("urls")
-            have = [u for u in [entry.get("url"), *(more if isinstance(more, list) else [])]
+            have = [u.strip() for u in [entry.get("url"), *(more if isinstance(more, list) else [])]
                     if isinstance(u, str) and u.strip()]
-            if not all(is_bayam_link(u) for u in have):
-                raise ConfigError(f"{name!r} is not a Bayam feed; its links are not Bayam's.")
         added = [link for link in wanted if link not in have]
-        result = {"feed": name, "added": added, "already": len(wanted) - len(added), "created": at is None}
-        if not added:
-            return result
+        relative = _new_list_file(os.path.dirname(os.path.abspath(self.config_file)), name)
+        path = self._links_path(relative)
 
-        # Where the feed said "url" or "urls" it now says "urls", in the same place.
-        merged: dict = {}
-        for key, value in entry.items():
-            if key in ("url", "urls"):
-                merged.setdefault("urls", have + added)
-            else:
-                merged[key] = value
-        if "urls" not in merged:
-            merged = {"name": merged.pop("name"), "urls": added, **merged}
-        if at is None:
-            feeds.append(merged)
+        # Where the feed said "url" or "urls" it now says "urls_file", in the same place.
+        if entry is None:
+            feeds.append({"name": name, "urls_file": relative, "keep_days": 0})
         else:
+            merged: dict = {}
+            for key, value in entry.items():
+                if key in ("url", "urls"):
+                    merged.setdefault("urls_file", relative)
+                else:
+                    merged[key] = value
+            if "urls_file" not in merged:
+                merged = {"name": merged.pop("name", name), "urls_file": relative, **merged}
             feeds[at] = merged
-        self.save_config(json.dumps(data, indent=2, ensure_ascii=False), view["version"])
-        return result
+
+        # The file first: the config is checked by reading it.
+        _write_links(path, have + added)
+        try:
+            self.save_config(json.dumps(data, indent=2, ensure_ascii=False), view["version"])
+        except BaseException:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return {"feed": name, "added": added, "already": len(wanted) - len(added),
+                "created": entry is None, "file": relative}
+
+    def remove_links(self, name: str, links: list[str]) -> dict:
+        """Take ``links`` out of the link list of the feed called ``name``.
+
+        Only a feed with a ``urls_file`` has a list to take them from, and it
+        keeps at least one: a feed with none is not one a run can read — remove
+        the feed itself in the editor. What was downloaded from a link stays in
+        the library until it is pruned.
+        """
+        name = name.strip() if isinstance(name, str) else ""
+        unwanted = _clean_links(links)
+        if not unwanted:
+            raise ConfigError("No links to remove.")
+        _, feeds, _ = self._config_data()
+        at = _feed_at(feeds, name)
+        path = feeds[at].get("urls_file") if at is not None else None
+        if not isinstance(path, str) or not path.strip():
+            raise ConfigError(f"{name!r} is not a feed with a link list (a urls_file).")
+        path = self._links_path(path.strip())
+        with self._config_lock:
+            have = _links_in(path)
+            kept = [link for link in have if link not in unwanted]
+            if not kept:
+                raise ConfigError(
+                    "A feed needs at least one link. To drop the feed, remove it in the configuration."
+                )
+            removed = [link for link in have if link in unwanted]
+            if removed:
+                _write_links(path, kept)
+        self._links_changed(name, f"{len(removed)} link(s) removed.", removed)
+        return {"feed": name, "removed": removed}
+
+    def _links_changed(self, name: str, text: str, which: list[str]) -> None:
+        if not which:
+            return
+        self.activity.appendleft({"when": _iso(time.time()), "kind": "links", "text": f"{name}: {text}", "ok": True})
+        log_line(f"links of {name} changed from the panel: {text}")
+
+
+# Where the panel puts the link list of a feed it makes, beside the config.
+LISTS_DIR = "lists"
+
+
+def _clean_links(links) -> list[str]:
+    """``links`` stripped, each once, refusing anything that is not a web address."""
+    out: list[str] = []
+    for link in links if isinstance(links, list) else []:
+        link = link.strip() if isinstance(link, str) else ""
+        if not link:
+            continue
+        parts = urlsplit(link)
+        if parts.scheme not in ("http", "https") or not parts.netloc or any(c.isspace() for c in link):
+            raise ConfigError(f"{link!r} is not a link (https://...).")
+        if link not in out:
+            out.append(link)
+    return out
+
+
+def _feed_at(feeds: list, name: str) -> int | None:
+    return next((i for i, f in enumerate(feeds) if isinstance(f, dict) and f.get("name") == name), None)
+
+
+def _links_in(path: str) -> list[str]:
+    """The links in the link list at ``path``; none if there is no such file yet."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return list(parse_links(fh.read().splitlines()))
+    except FileNotFoundError:
+        return []
+
+
+def _write_links(path: str, links: list[str]) -> None:
+    """Write ``links`` to ``path``, one per line, in a single rename.
+
+    Appending keeps whatever else the file says (``# notes``, blank lines) and
+    adds the new links at the end; removing keeps every line but the links
+    that are gone.
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+    present = {line.strip() for line in lines}
+    keep = set(links)
+    out = [line for line in lines
+           if not line.strip() or line.strip().startswith("#") or line.strip() in keep]
+    out += [link for link in links if link not in present]
+    folder = os.path.dirname(path)
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".fetchit-", suffix=".txt", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(out) + "\n")
+        if os.path.exists(path):
+            shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _new_list_file(folder: str, name: str) -> str:
+    """A free ``lists/<name>.txt`` path, relative to the config's ``folder``."""
+    import unicodedata
+
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-") or "links"
+    for n in range(1, 1000):
+        relative = f"{LISTS_DIR}/{slug}{'' if n == 1 else f'-{n}'}.txt"
+        if not os.path.exists(os.path.join(folder, relative)):
+            return relative
+    raise ConfigError(f"Could not find a free file name for {name!r} in {LISTS_DIR}/.")
 
 
 class ConfigConflict(Exception):
@@ -575,8 +719,6 @@ def _version(raw: bytes) -> str:
 
 
 def _untemp(message: str) -> str:
-    import re
-
     return re.sub(r"'[^']*\.fetchit-[^']*\.json'", "the configuration", message)
 
 
@@ -663,9 +805,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.ACCEPTED, svc.run(dry_run=bool(body.get("dry_run")), only=only).view())
         elif path == "/api/prune":
             self._json(HTTPStatus.ACCEPTED, svc.prune().view())
-        elif path == "/api/bayam":
+        elif path in ("/api/links", "/api/links/remove"):
+            edit = svc.remove_links if path.endswith("/remove") else svc.add_links
             try:
-                self._json(HTTPStatus.OK, svc.add_bayam_links(body.get("feed"), body.get("links")))
+                self._json(HTTPStatus.OK, edit(body.get("feed"), body.get("links")))
             except ConfigConflict as exc:
                 self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
             except (FeedError, ValueError, TypeError) as exc:
