@@ -31,6 +31,16 @@ _FETCH_ERRORS = (URLError, OSError, ValueError, HTTPException)
 _PATH_SAFE = "/%:@!$&'()*+,;=~[]"
 _QUERY_SAFE = _PATH_SAFE + "?"
 
+# Sent with every request unless the caller says otherwise. Some sites' firewalls
+# turn away Python's own "Python-urllib/3.x" with a 403 — Les Minimondes does,
+# for its pictures as much as its mp3s — so nothing goes out under that name.
+USER_AGENT = "fetchit"
+
+
+def _request(url: str, headers: dict[str, str] | None = None, **kwargs) -> Request:
+    """A :class:`Request` for ``url`` carrying fetchit's User-Agent and ``headers``."""
+    return Request(safe_url(url), headers={"User-Agent": USER_AGENT, **(headers or {})}, **kwargs)
+
 
 def safe_url(url: str) -> str:
     """``url`` as something that can be requested, changed as little as possible.
@@ -76,7 +86,7 @@ def reachable(url: str, *, timeout: float = PROBE_TIMEOUT) -> bool:
     "no".
     """
     try:
-        with urlopen(Request(safe_url(url), method="HEAD"), timeout=timeout):
+        with urlopen(_request(url, method="HEAD"), timeout=timeout):
             return True
     except HTTPError:
         return True
@@ -110,7 +120,7 @@ def fetch_text(
 
     def once() -> str:
         try:
-            request = Request(safe_url(url), headers=headers or {})
+            request = _request(url, headers)
             with urlopen(request, timeout=timeout) as response:
                 return response.read().decode("utf-8", errors="replace")
         except _FETCH_ERRORS as exc:
@@ -144,7 +154,7 @@ def download_temp(
                 out.seek(0)
                 out.truncate()
                 try:
-                    with urlopen(safe_url(url), timeout=timeout) as response:
+                    with urlopen(_request(url), timeout=timeout) as response:
                         while chunk := response.read(64 * 1024):
                             out.write(chunk)
                 except _FETCH_ERRORS as exc:
@@ -178,7 +188,7 @@ def download_to(
             def once() -> None:
                 out.seek(0)
                 out.truncate()
-                request = Request(safe_url(url), headers=headers or {})
+                request = _request(url, headers)
                 try:
                     with urlopen(request, timeout=timeout) as response:
                         while chunk := response.read(64 * 1024):

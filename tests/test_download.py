@@ -233,8 +233,8 @@ def test_safe_url_leaves_a_sendable_url_exactly_alone(url):
 def test_download_temp_asks_for_a_url_with_spaces_in_it_escaped(monkeypatch):
     asked = []
 
-    def fake_urlopen(url, timeout=30):
-        asked.append(url)
+    def fake_urlopen(request, timeout=30):
+        asked.append(request.full_url)
         return _FakeResponse(b"audio-bytes")
 
     monkeypatch.setattr(download, "urlopen", fake_urlopen)
@@ -244,6 +244,27 @@ def test_download_temp_asks_for_a_url_with_spaces_in_it_escaped(monkeypatch):
         assert path.endswith(".mp3")
 
     assert asked == ["https://a/My%20Show/ep%201.mp3"]
+
+
+def test_every_fetch_goes_out_under_fetchits_own_user_agent(monkeypatch, tmp_path):
+    # Python's "Python-urllib/3.x" is turned away with a 403 by some sites'
+    # firewalls (Les Minimondes' pictures), so no request may go out under it.
+    agents = []
+
+    def fake_urlopen(request, timeout=30):
+        agents.append(request.get_header("User-agent"))
+        return _FakeResponse(b"bytes")
+
+    monkeypatch.setattr(download, "urlopen", fake_urlopen)
+
+    download.fetch_text("https://a/x.json")
+    with download_temp("https://a/x.mp3"):
+        pass
+    download.download_to("https://a/x.png", str(tmp_path / "x.png"))
+    # A caller's own User-Agent still wins.
+    download.download_to("https://a/y.png", str(tmp_path / "y.png"), headers={"User-Agent": "other"})
+
+    assert agents == ["fetchit"] * 3 + ["other"]
 
 
 def test_fetch_text_asks_for_a_url_with_spaces_in_it_escaped(monkeypatch):
