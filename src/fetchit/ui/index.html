@@ -315,7 +315,11 @@ window.addEventListener("beforeunload", (e) => { if (dirty()) { e.preventDefault
 // A new link — say the one printed in this month's magazine — is a line in that
 // file. Whatever was pasted, the links are picked out of it, so a line from an
 // email or a note works as well. The last tab makes a new list.
-const NEW = "\u0000new";
+// NEW stands for the last tab in activeList; no feed name can be a Symbol. The
+// tab itself is told apart by data-new, not by its data-list: a marker written
+// into the HTML comes back from the parser changed (it turns a NUL into U+FFFD),
+// and then matched nothing.
+const NEW = Symbol("new list");
 let lists = [], activeList = null;
 
 function listLine(html, cls = "muted") { $("list-line").className = "config-line " + cls; $("list-line").innerHTML = html; }
@@ -325,9 +329,10 @@ function showLists(found) {
   if (activeList !== NEW && !lists.some(f => f.name === activeList)) activeList = lists.length ? lists[0].name : NEW;
   $("list-tabs").innerHTML = lists.map(f =>
     `<button role="tab" data-list="${esc(f.name)}" aria-selected="${f.name === activeList}">${esc(f.name)}<span class="count">${f.list.links.length}</span></button>`
-  ).join("") + `<button role="tab" data-list="${NEW}" aria-selected="${activeList === NEW}">+ New list</button>`;
+  ).join("") + `<button role="tab" data-list="" data-new aria-selected="${activeList === NEW}">+ New list</button>`;
   $("list-tabs").querySelectorAll("[data-list]").forEach(b => b.addEventListener("click", () => {
-    if (activeList !== b.dataset.list) { activeList = b.dataset.list; listLine(""); }
+    const chosen = "new" in b.dataset ? NEW : b.dataset.list;
+    if (activeList !== chosen) { activeList = chosen; listLine(""); }
     showLists(lists);
   }));
   const f = lists.find(f => f.name === activeList);
