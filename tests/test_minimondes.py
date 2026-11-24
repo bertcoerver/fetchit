@@ -202,7 +202,9 @@ def test_a_listing_is_read_as_its_stories(site):
     assert story.published == datetime(2026, 9, 1, 0, 0, 2, tzinfo=paris)
     assert legend.published == datetime(2026, 10, 1, 0, 0, 1, tzinfo=paris)
     assert parsed.title == "Les Mini Mondes" and parsed.language == "fr"
-    assert parsed.image_url == story.image_url
+    # Each story shows its own picture; the feed, the magazine's logo.
+    assert story.image_url == "https://activites.lesminimondes.fr/wp-content/uploads/2026/09/cover.png"
+    assert parsed.image_url == minimondes.LOGO_URL
 
     assert media.kind_of(story) == "audio"
     assert media.item_id(story) == "minimondes:histoire-audio-enfant-mexique-drole-de-fete-les-mini-mondes"
@@ -226,6 +228,12 @@ def test_one_activity_page_is_a_feed_of_its_own(site):
     parsed = parse_minimondes(FeedConfig(url=STORY + "?utm_source=qr", name="x"))
     assert [item.enclosure_url for item in parsed.items] == [MP3]
     assert "country" not in parsed.items[0].extra
+    assert parsed.image_url == minimondes.LOGO_URL
+
+
+def test_the_feed_s_artwork_is_the_logo_without_reading_the_site(site):
+    assert media.source_image(QR) == minimondes.LOGO_URL
+    assert site == []
 
 
 @pytest.mark.parametrize("page", [CRAFT, SONG])

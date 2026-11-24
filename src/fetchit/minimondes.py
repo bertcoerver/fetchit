@@ -26,6 +26,11 @@ by the month its mp3 was uploaded, which WordPress puts in the file's address
 (``/wp-content/uploads/2026/09/…``).
 
 A single activity page works as a link too, for a story on its own.
+
+Each story's picture is the illustration its page shows. The feed's own
+picture is the magazine's compass logo, the same for every issue: a feed is
+usually a link list of several issues, and the one that happens to come first
+should not speak for all of them.
 """
 
 from __future__ import annotations
@@ -54,6 +59,9 @@ AUTHOR = "Les Mini Mondes"
 USER_AGENT = "fetchit"
 HEADERS = {"User-Agent": USER_AGENT}
 TIMEOUT = 30
+
+# The magazine's compass, square: the feed's picture, whichever issue it reads.
+LOGO_URL = f"{SITE_URL}/wp-content/uploads/2024/05/cropped-MM_COM_boussole_512x512px.png"
 
 # A listing grows a page at a time; this is far beyond any country's activities
 # and only there so a site that never says "last page" can't keep a run going.
@@ -201,7 +209,7 @@ def parse_minimondes(cfg: FeedConfig) -> ParsedFeed:
 
     return ParsedFeed(
         items=[apply_extracts(item, cfg.extract) for item in items],
-        image_url=items[0].image_url,
+        image_url=LOGO_URL,
         description=_about(country),
         title=AUTHOR,
         link=SITE_URL,
@@ -210,9 +218,9 @@ def parse_minimondes(cfg: FeedConfig) -> ParsedFeed:
     )
 
 
-def story_image(url: str) -> str | None:
-    """Artwork for the feed ``url`` makes: its newest story's picture."""
-    return parse_minimondes(FeedConfig(url=url, name="")).image_url
+def magazine_logo(url: str) -> str:
+    """Artwork for the feed ``url`` makes: the magazine's logo, whatever the issue."""
+    return LOGO_URL
 
 
 # --- the listing -------------------------------------------------------------

@@ -265,6 +265,9 @@ The country's listing is read on every run, since activities are added after an
 issue is out; each activity's page is read once. The site gives no usable date,
 so an episode is dated by the month its mp3 was uploaded.
 
+Each episode's picture is the illustration on its story's page. The feed's
+artwork is the magazine's compass logo, the same whichever issues it reads.
+
 ## Quality
 
 Every video source offers several renditions. Which one is right depends on where

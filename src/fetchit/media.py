@@ -330,7 +330,7 @@ def source_image(url: str) -> str | None:
     """
     from .arte import arte_collection_id, collection_image
     from .bayam import is_bayam_link, magazine_image
-    from .minimondes import is_minimondes_link, story_image
+    from .minimondes import is_minimondes_link, magazine_logo
     from .npo import npo_series, series_image
     from .youtube import channel_image
 
@@ -341,7 +341,7 @@ def source_image(url: str) -> str | None:
     if is_bayam_link(url):
         return magazine_image(url)
     if is_minimondes_link(url):
-        return story_image(url)
+        return magazine_logo(url)
     return channel_image(url)
 
 
