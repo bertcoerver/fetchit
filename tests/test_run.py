@@ -145,6 +145,19 @@ def test_a_pruned_item_is_not_fetched_again(world):
     assert run.run(world.config(CHANNEL)).fetched == 0
 
 
+def test_a_link_list_takes_every_item_of_every_link_however_old(world, tmp_path):
+    cfg = FeedConfig(url="https://flyer.bayam.tv/4sYB/pmo", name="Mags",
+                     urls_file=str(tmp_path / "mags.txt"))
+    world.items[cfg.url] = [_post(700), _post(30), _post(300)]
+    assert run.run(world.config(cfg)).fetched == 3
+    assert world.titles("Mags") == ["Post 700", "Post 300", "Post 30"]
+
+    # A back issue added later, dated before everything there is: still wanted.
+    world.items[cfg.url] = [_post(700), _post(30), _post(300), _post(900)]
+    assert run.run(world.config(cfg)).fetched == 1
+    assert "Post 900" in world.titles("Mags")
+
+
 def test_since_backfills_from_a_date_oldest_first_a_few_at_a_time(world):
     cfg = FeedConfig(url=CHANNEL.url, name="Channel", since=NOW - timedelta(days=10), max_per_run=2)
     world.items[cfg.url] = [_video(n) for n in (1, 5, 9, 12, 3)]

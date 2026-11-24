@@ -268,7 +268,9 @@ def fetch_feed(
     New means not yet done with (see :mod:`fetchit.state`) and published no
     earlier than the feed's starting point: ``since`` for a backfill, and
     otherwise the newest item there was when the feed was first seen — so
-    following a channel starts with its latest video, not its last fifteen. At
+    following a channel starts with its latest video, not its last fifteen. A
+    link list (``urls_file``) has no starting point: every item of every link
+    in it is wanted, unless it has a ``since``. At
     most ``max_per_run`` items are taken; the rest wait for the next run, which
     takes them first.
 
@@ -282,7 +284,12 @@ def fetch_feed(
 
     listed = sorted((i for i in listing.items if i.published is not None), key=_when)
 
-    after = cfg.since or state.after(name)
+    if cfg.urls_file:
+        # A link list: each link is there because somebody put it there, so all
+        # of it is wanted, however old — a back issue added today included.
+        after = cfg.since or datetime.min.replace(tzinfo=timezone.utc)
+    else:
+        after = cfg.since or state.after(name)
     if after is None and listed:
         # Seen for the first time: start from the newest item there is.
         after = _when(listed[-1])

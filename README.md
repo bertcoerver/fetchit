@@ -128,6 +128,8 @@ pruned.
 - **A feed seen for the first time takes only its newest item**, and everything
   published after it from then on. Following a channel starts with its latest
   video, not its last fifteen.
+- **A [link list](#link-lists) takes everything** behind its links, however old:
+  each link is there on purpose, and a back issue added later is wanted too.
 - **`since` makes a feed a backfill**: everything published since that date,
   oldest first. For a YouTube channel that includes the whole back catalogue,
   read from its uploads playlist (no API key), dated 25 videos a run. Pair it with
