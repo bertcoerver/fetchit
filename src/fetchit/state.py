@@ -109,6 +109,21 @@ class State:
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         self._feed(name)["seen"][item_id] = f"{stamp} {why}"
 
+    def seen_ids(self, name: str) -> list[str]:
+        """The items feed ``name`` is done with, in the order it was done with them."""
+        entry = self._data["feeds"].get(name)
+        seen = entry.get("seen") if isinstance(entry, dict) else None
+        return list(seen) if isinstance(seen, dict) else []
+
+    def forget(self, name: str, item_id: str) -> bool:
+        """Let feed ``name`` take ``item_id`` again. Returns whether it had been done with it."""
+        entry = self._data["feeds"].get(name)
+        seen = entry.get("seen") if isinstance(entry, dict) else None
+        if isinstance(seen, dict) and item_id in seen:
+            del seen[item_id]
+            return True
+        return False
+
     def fetched_since(self, name: str, when: datetime) -> int:
         """How many items feed ``name`` has downloaded since ``when``."""
         entry = self._data["feeds"].get(name)

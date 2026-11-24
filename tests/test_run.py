@@ -416,3 +416,76 @@ def test_max_per_day_keeps_a_backfill_in_step_with_its_reader(world):
     run.run(world.config(cfg))
     run.run(world.config(cfg))  # the same day: nothing more
     assert world.titles("Channel") == ["Video 20"]
+
+
+# --- forgetting ------------------------------------------------------------------
+
+
+def test_a_forgotten_item_is_deleted_and_fetched_again(world):
+    world.items[CHANNEL.url] = [_video(1)]
+    config = world.config(CHANNEL)
+    run.run(config)
+    [episode] = run.episodes(config, "Channel")
+    assert episode.title == "Video 1" and episode.in_library and not episode.picture
+
+    gone = run.forget(config, "Channel", [episode.id])
+
+    assert [e.title for e in gone] == ["Video 1"]
+    assert world.titles("Channel") == []
+    assert not State.load(world.root).seen("Channel", episode.id)
+    world.resolved.clear()
+    assert run.run(config).fetched == 1
+    assert world.resolved == ["Video 1"] and world.titles("Channel") == ["Video 1"]
+
+
+def test_forgetting_leaves_the_other_items_alone(world):
+    world.items[CHANNEL.url] = [_video(2)]
+    config = world.config(CHANNEL)
+    run.run(config)
+    world.items[CHANNEL.url] = [_video(2), _video(1)]
+    run.run(config)
+    newest, older = run.episodes(config, "Channel")
+    assert (newest.title, older.title) == ("Video 1", "Video 2")
+
+    run.forget(config, "Channel", [older.id])
+
+    assert world.titles("Channel") == ["Video 1"]
+    assert State.load(world.root).seen("Channel", newest.id)
+
+
+def test_a_pruned_item_can_be_forgotten_too(world):
+    world.items[CHANNEL.url] = [_video(1)]
+    config = world.config(CHANNEL)
+    run.run(config)
+    [episode] = run.episodes(config, "Channel")
+    for record in records(world.root, "Channel"):
+        os.unlink(record["_path"])
+    [remembered] = run.episodes(config, "Channel")
+    assert remembered.id == episode.id and not remembered.in_library
+
+    assert [e.id for e in run.forget(config, "Channel", [episode.id])] == [episode.id]
+    assert run.run(config).fetched == 1
+
+
+def test_an_id_the_feed_does_not_know_is_left_out(world):
+    world.items[CHANNEL.url] = [_video(1)]
+    config = world.config(CHANNEL)
+    run.run(config)
+    assert run.forget(config, "Channel", ["nonsense"]) == []
+    assert world.titles("Channel") == ["Video 1"]
+
+
+def test_nothing_is_forgotten_while_a_run_is_going(world):
+    world.items[CHANNEL.url] = [_video(1)]
+    config = world.config(CHANNEL)
+    run.run(config)
+    [episode] = run.episodes(config, "Channel")
+    with single_run(world.root):
+        with pytest.raises(AlreadyRunning):
+            run.forget(config, "Channel", [episode.id])
+    assert world.titles("Channel") == ["Video 1"]
+
+
+def test_forgetting_names_a_feed_that_is_in_the_config(world):
+    with pytest.raises(ConfigError, match="No feed called"):
+        run.forget(world.config(CHANNEL), "Nope", ["x"])

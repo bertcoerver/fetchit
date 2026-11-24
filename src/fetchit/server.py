@@ -29,19 +29,19 @@ import time
 import traceback
 import uuid
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import __version__
 from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
 from .feeds import FeedError, parse_links
 from .library import KIND_DIRS, feed_folders, prune, records
-from .run import AlreadyRunning, run
+from .run import AlreadyRunning, episodes, forget, run
 from .state import State
 
 DEFAULT_HOST = "127.0.0.1"
@@ -293,6 +293,38 @@ class Service:
             return f"{removed} item(s) expired."
 
         return self.start_job("prune", work)
+
+    def episodes(self, feed: str) -> list[dict]:
+        """Feed ``feed``'s episodes, newest first, as the GUI lists them."""
+        return [asdict(e) for e in episodes(self.config(), feed)]
+
+    def fetch_again(self, feed: str, ids: list[str]) -> Job:
+        """Forget these episodes of ``feed`` and run the feed, as one job.
+
+        One job, so nothing else can start between the two. Raises
+        :class:`Busy` if a job is going already: this is not the job the
+        caller asked for, and handing that one back would say it was.
+        """
+        if not isinstance(feed, str) or not feed.strip():
+            raise ValueError("Which feed?")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
+            raise ValueError("Which episodes?")
+
+        def work() -> str:
+            config = self.config()
+            gone = forget(config, feed, ids)
+            for episode in gone:
+                print(f"Forgot {episode.title or episode.id}")
+            if not gone:
+                return f"Nothing to fetch again: {feed} knows none of those."
+            summary = run(config, only=[feed])
+            return f"{len(gone)} forgotten, {summary.fetched} fetched again."
+
+        asked = time.time()
+        job = self.start_job(f"fetch again ({feed})", work)
+        if job.started < asked:
+            raise Busy(f"{job.kind} is going; try again when it is done.")
+        return job
 
     def _maybe_update_yt_dlp(self) -> None:
         if not self.update_yt_dlp or time.time() - self._yt_dlp_updated < YT_DLP_EVERY:
@@ -729,6 +761,10 @@ def _new_list_file(folder: str, name: str) -> str:
     raise ConfigError(f"Could not find a free file name for {name!r} in {LISTS_DIR}/.")
 
 
+class Busy(Exception):
+    """Raised when a job is asked for while another one is going."""
+
+
 class ConfigConflict(Exception):
     """The config file changed since the editor read it."""
 
@@ -795,6 +831,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"feeds": svc.feeds()})
             elif path == "/api/recent":
                 self._json(HTTPStatus.OK, {"recent": svc.recent()})
+            elif path == "/api/episodes":
+                feed = (parse_qs(urlsplit(self.path).query).get("feed") or [""])[0]
+                try:
+                    self._json(HTTPStatus.OK, {"feed": feed, "episodes": svc.episodes(feed)})
+                except ConfigError as exc:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
             elif path == "/api/activity":
                 self._json(HTTPStatus.OK, {"activity": list(svc.activity)})
             elif path == "/api/log":
@@ -824,6 +866,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.ACCEPTED, svc.run(dry_run=bool(body.get("dry_run")), only=only).view())
         elif path == "/api/prune":
             self._json(HTTPStatus.ACCEPTED, svc.prune().view())
+        elif path == "/api/forget":
+            try:
+                self._json(HTTPStatus.ACCEPTED, svc.fetch_again(body.get("feed"), body.get("ids")).view())
+            except Busy as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+            except ValueError as exc:
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
         elif path in ("/api/links", "/api/links/remove"):
             edit = svc.remove_links if path.endswith("/remove") else svc.add_links
             try:

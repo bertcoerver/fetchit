@@ -73,6 +73,11 @@
   ul.links { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13.5px; max-height: 240px; overflow: auto; }
   ul.links li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
   ul.links li a { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  select { font: inherit; background: var(--code); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; }
+  ul.episodes { list-style: none; margin: 0; padding: 0; font-size: 14px; max-height: 420px; overflow: auto; }
+  ul.episodes li { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  ul.episodes li .title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  ul.episodes time { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -107,6 +112,14 @@
           <tbody id="feeds"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
         </table>
       </div>
+    </section>
+
+    <section class="wide" id="episodes-section">
+      <h2>Episodes <select id="episodes-feed" aria-label="Feed"></select><span class="spacer"></span>
+        <label class="muted" style="font-weight:400;font-size:13px"><input type="checkbox" id="episodes-nopic"> only without a picture</label></h2>
+      <p class="muted" style="font-size:13px;margin:0 0 8px">“Fetch again” deletes the episode and runs its feed, which downloads it anew — if the source still lists it. One that has gone from its source is gone for good.</p>
+      <ul class="episodes" id="episodes"><li class="muted">Loading…</li></ul>
+      <p class="config-line muted" id="episodes-line"></p>
     </section>
 
     <section class="wide">
@@ -213,12 +226,17 @@ async function loadFeeds() {
         <td>${newest}</td>
         <td class="nowrap">${esc(when(f.fetched))}</td>
         <td>${settings}</td>
-        <td class="nowrap"><button class="small" data-feed="${esc(f.name)}" data-dry="1">Dry run</button> <button class="small" data-feed="${esc(f.name)}">Run</button></td>
+        <td class="nowrap"><button class="small" data-feed="${esc(f.name)}" data-dry="1">Dry run</button> <button class="small" data-feed="${esc(f.name)}">Run</button> <button class="small" data-episodes="${esc(f.name)}">Episodes</button></td>
       </tr>`;
     }).join("");
     showLists(feeds.filter(f => f.list));
+    showEpisodeFeeds(feeds.map(f => f.name));
     document.querySelectorAll("[data-feed]").forEach(b => b.addEventListener("click", () =>
       start("api/run", {dry_run: !!b.dataset.dry, feeds: [b.dataset.feed]})));
+    document.querySelectorAll("[data-episodes]").forEach(b => b.addEventListener("click", () => {
+      $("episodes-feed").value = b.dataset.episodes; loadEpisodes();
+      $("episodes-section").scrollIntoView({behavior: "smooth", block: "start"});
+    }));
     setRunning(!!watching);
   } catch (e) {
     $("feeds").innerHTML = `<tr><td colspan="6" class="bad">${esc(e.message)}</td></tr>`;
@@ -233,6 +251,47 @@ async function loadRecent() {
       : `<li class="muted">Nothing in the library yet.</li>`;
   } catch (e) { $("recent").innerHTML = `<li class="bad">${esc(e.message)}</li>`; }
 }
+
+// Episodes: what one feed has in the library, newest first, each of which can
+// be deleted and downloaded anew — for one that arrived without its picture,
+// say. The server does both as one job, so no run can come between them.
+function episodesLine(html, cls = "muted") { $("episodes-line").className = "config-line " + cls; $("episodes-line").innerHTML = html; }
+
+function showEpisodeFeeds(names) {
+  const sel = $("episodes-feed"), was = sel.value;
+  sel.innerHTML = names.map(n => `<option>${esc(n)}</option>`).join("");
+  sel.value = names.includes(was) ? was : (names[0] ?? "");
+  if (sel.value !== was) loadEpisodes();
+}
+
+async function loadEpisodes() {
+  const feed = $("episodes-feed").value;
+  if (!feed) { $("episodes").innerHTML = `<li class="muted">No feeds in the config.</li>`; return; }
+  try {
+    const {episodes} = await api("api/episodes?feed=" + encodeURIComponent(feed));
+    if (feed !== $("episodes-feed").value) return;  // another feed was picked meanwhile
+    const nopic = $("episodes-nopic").checked;
+    const shown = episodes.filter(e => e.in_library && (!nopic || !e.picture));
+    $("episodes").innerHTML = shown.length ? shown.map(e =>
+      `<li><time>${esc((e.published || "").slice(0, 10) || "undated")}</time>` +
+      `<span class="title">${esc(e.title || e.id)}${e.picture ? "" : ` <span class="pill">no picture</span>`}</span>` +
+      `<button class="small" data-again="${esc(e.id)}" data-title="${esc(e.title || e.id)}">Fetch again</button></li>`).join("")
+      : `<li class="muted">${nopic ? "Every episode has its picture." : "Nothing of this feed in the library."}</li>`;
+    $("episodes").querySelectorAll("[data-again]").forEach(b => b.addEventListener("click", () => fetchAgain(feed, b.dataset.again, b.dataset.title)));
+    setRunning(!!watching);
+  } catch (e) { $("episodes").innerHTML = `<li class="bad">${esc(e.message)}</li>`; }
+}
+
+async function fetchAgain(feed, id, title) {
+  if (!confirm(`Delete this episode of ${feed} and download it again?\n\n${title}\n\nIf its source no longer lists it, it is gone for good.`)) return;
+  try {
+    const job = await api("api/forget", {method: "POST", body: {feed, ids: [id]}});
+    episodesLine("");
+    watchJob(job.id);
+  } catch (e) { episodesLine(esc(e.message), "bad"); }
+}
+$("episodes-feed").addEventListener("change", () => { episodesLine(""); loadEpisodes(); });
+$("episodes-nopic").addEventListener("change", loadEpisodes);
 
 async function loadActivity() {
   try {
@@ -415,7 +474,7 @@ async function removeLink(feed, link) {
 }
 document.querySelectorAll("[data-list-add]").forEach(b => b.addEventListener("click", () => addLinks(b.dataset.listAdd === "run")));
 
-function setRunning(on) { document.querySelectorAll("[data-run], [data-feed]").forEach(b => b.disabled = on); }
+function setRunning(on) { document.querySelectorAll("[data-run], [data-feed], [data-again]").forEach(b => b.disabled = on); }
 
 async function start(path, body) {
   try { watchJob((await api(path, {method: "POST", body})).id); }
@@ -439,7 +498,7 @@ async function watchJob(id) {
     await new Promise(r => setTimeout(r, 1500));
   }
   watching = null; setRunning(false);
-  loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog();
+  loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog(); loadEpisodes();
 }
 
 document.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click", () =>

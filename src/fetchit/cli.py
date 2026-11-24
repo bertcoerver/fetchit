@@ -4,6 +4,7 @@ Subcommands:
     run             read every feed and download what is new into the library
     fields          list the fields a feed's items have, for writing filters
     prune           delete what has outlived its feed's keep_days
+    forget          delete episodes and let the next run fetch them again
     doctor          check the tools, the config and the library
     serve           run on a schedule, with a web GUI
 """
@@ -21,7 +22,7 @@ from .errorlog import log_path
 from .feeds import FeedConfig, FeedError, apply_filters, item_fields, parse_feed
 from .library import FEED_MAX, prune, safe_name
 from .media import TEXT, item_id, kind_of
-from .run import AlreadyRunning, run
+from .run import AlreadyRunning, Episode, episodes, forget, run
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -92,6 +93,53 @@ def _cmd_prune(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_forget(args: argparse.Namespace) -> int:
+    config = load_config(args.config, library=args.library)
+    known = episodes(config, args.feed)
+    if not args.episode:
+        if not known:
+            print(f"{args.feed}: no episodes.")
+        for episode in known:
+            print(_episode_line(episode))
+        return 0
+
+    chosen: list[Episode] = []
+    for wanted in args.episode:
+        matches = _matching(known, wanted)
+        if not matches:
+            raise ConfigError(f"No episode of {args.feed!r} is {wanted!r} or has it in its title.")
+        if len(matches) > 1:
+            listed = "\n".join(_episode_line(e) for e in matches)
+            raise ConfigError(f"{wanted!r} matches {len(matches)} episodes; name one by its id:\n{listed}")
+        chosen += matches
+
+    try:
+        gone = forget(config, args.feed, [e.id for e in chosen])
+    except AlreadyRunning as exc:
+        print(f"Not now: {exc}.", file=sys.stderr)
+        return 1
+    for episode in gone:
+        print(f"Forgot {episode.title or episode.id}")
+    print(f"{len(gone)} episode(s) will be fetched again by the next run of {args.feed}, if its source still lists them.")
+    return 0
+
+
+def _matching(known: list[Episode], wanted: str) -> list[Episode]:
+    """The episode whose id is ``wanted``, or failing that, those with it in their title."""
+    exact = [e for e in known if e.id == wanted]
+    if exact:
+        return exact
+    text = wanted.casefold()
+    return [e for e in known if text in e.title.casefold()]
+
+
+def _episode_line(episode: Episode) -> str:
+    date = (episode.published or "")[:10] or "undated   "
+    title = episode.title if episode.in_library else "(not in the library)"
+    flag = "" if episode.picture or not episode.in_library else "   [no picture]"
+    return f"  {date}  {title}{flag}\n              id: {episode.id}"
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     ok = True
     print(f"fetchit {__version__}")
@@ -155,6 +203,17 @@ def _parser() -> argparse.ArgumentParser:
 
     prune_ = commands.add_parser("prune", help="delete what has outlived keep_days")
     prune_.set_defaults(handler=_cmd_prune)
+
+    forget_ = commands.add_parser(
+        "forget",
+        help="delete episodes and let the next run fetch them again",
+        description="Delete episodes from the library and from what fetchit remembers, so the "
+                    "next run of the feed downloads them again. Without an episode, list the feed's.",
+    )
+    forget_.add_argument("feed", help="the feed, by name")
+    forget_.add_argument("episode", nargs="*",
+                         help="an episode's id, or text from its title that only it has")
+    forget_.set_defaults(handler=_cmd_forget)
 
     doctor = commands.add_parser("doctor", help="check the tools, the config and the library")
     doctor.set_defaults(handler=_cmd_doctor)

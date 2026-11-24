@@ -63,6 +63,8 @@ from .library import (
     feed_folders,
     place,
     prune,
+    records,
+    remove_items,
     staging_dir,
     update_artwork,
     write_feed,
@@ -160,6 +162,61 @@ def run(config: Config, *, dry_run: bool = False, only: list[str] | None = None)
         if not dry_run:
             stack.enter_context(single_run(config.library))
         return _locked_run(config, feeds, dry_run=dry_run)
+
+
+@dataclass
+class Episode:
+    """One of a feed's items as fetchit knows it: in the library, or only remembered."""
+
+    id: str
+    title: str = ""
+    published: str | None = None
+    fetched: str | None = None
+    picture: bool = False
+    # False for an item fetchit is done with but has no files of: pruned, or
+    # stepped over for good.
+    in_library: bool = True
+
+
+def episodes(config: Config, feed: str) -> list[Episode]:
+    """Every item feed ``feed`` is done with, newest first; those in the library first."""
+    cfg = _select(config.feeds, [feed])[0]
+    state = State.load(config.library)
+    found = [
+        Episode(
+            id=str(record["id"]),
+            title=str(record.get("title") or ""),
+            published=record.get("published"),
+            fetched=record.get("fetched"),
+            picture=bool(record.get("image")),
+        )
+        for record in reversed(records(config.library, cfg.name))
+    ]
+    have = {e.id for e in found}
+    found += [Episode(id=i, in_library=False) for i in state.seen_ids(cfg.name) if i not in have]
+    return found
+
+
+def forget(config: Config, feed: str, ids: list[str]) -> list[Episode]:
+    """Delete these items of feed ``feed`` and let it fetch them again.
+
+    The files go as pruning takes them, and the state stops counting the items
+    as done, so the next run of the feed downloads each one again — if its
+    source still lists it. Takes the library's run lock: a run going at the
+    same time would write its own state over this. Returns what was forgotten;
+    an id the feed knows nothing of is left out.
+    """
+    cfg = _select(config.feeds, [feed])[0]
+    wanted = list(dict.fromkeys(ids))
+    with single_run(config.library):
+        known = {e.id: e for e in episodes(config, cfg.name)}
+        removed = {r["id"] for r in remove_items(config.library, cfg.name, set(wanted))}
+        state = State.load(config.library)
+        gone = [known[i] for i in wanted if (state.forget(cfg.name, i) or i in removed) and i in known]
+        state.save()
+    for episode in gone:
+        log_line(f"forgot {cfg.name}: {episode.title or episode.id}")
+    return gone
 
 
 def _select(feeds: list[FeedConfig], only: list[str] | None) -> list[FeedConfig]:

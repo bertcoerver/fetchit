@@ -50,7 +50,14 @@ sidebar** on its Info page — or **Open Web UI**. It shows the library and the
 free disk, when the next run is, and every feed with what the library holds of
 it (items, size, newest), when it last downloaded, and its settings. Buttons run
 everything, or one feed, for real or as a dry run, and prune now; what a run
-prints is shown as it goes. Below that: recent downloads and the log.
+prints is shown as it goes.
+
+**Episodes** lists what one feed has in the library, newest first, marking any
+that came without a picture (**only without a picture** shows just those).
+**Fetch again** deletes an episode and runs its feed, which downloads it anew —
+as long as its source still lists it; one that has gone from its source is gone
+for good. Each feed's **Episodes** button opens its list. Below that: recent
+downloads and the log.
 
 **Link lists** has a tab for every feed whose links are kept in a file of their
 own (a `urls_file`, such as Bayam or Les Mini Mondes magazines: the link printed in

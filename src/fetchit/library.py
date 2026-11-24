@@ -673,6 +673,19 @@ def prune(root: str, keep_days: dict[str, int], *, default: int = 0, now: float 
     return removed
 
 
+def remove_items(root: str, feed: str, ids: set[str]) -> list[dict]:
+    """Delete ``feed``'s items whose ``id`` is in ``ids``, as pruning does.
+
+    Record first, then media, picture and ``.nfo``, then any season folder
+    left empty. Returns the records of the items that went.
+    """
+    removed = [r for r in records(root, feed) if r.get("id") in ids and _remove_item(r)]
+    if removed:
+        for _kind, folder in feed_folders(root, feed):
+            _drop_empty_seasons(folder)
+    return removed
+
+
 def _fetched(record: dict, path: str) -> float:
     try:
         return datetime.fromisoformat(record["fetched"]).timestamp()

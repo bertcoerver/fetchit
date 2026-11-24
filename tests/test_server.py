@@ -306,3 +306,73 @@ def test_links_that_cannot_be_added_change_nothing(running, tmp_path, body, says
     assert status == 422 and says in answer["error"]
     assert config.read_text() == before
     assert not (tmp_path / "lists").exists()
+
+
+def _blog_post(library, title, item_id, day):
+    item = FeedItem(title=title, description="", link=f"https://blog.example/{item_id}",
+                    published=datetime(2026, 11, day, tzinfo=timezone.utc))
+    write_item(str(library), FeedConfig(url="https://blog.example/feed", name="Blog"),
+               ParsedFeed(items=[]), item, "text", item_id=item_id)
+
+
+def test_the_panel_lists_a_feeds_episodes(running):
+    start, library = running
+    _blog_post(library, "Older", "1", 5)
+    _blog_post(library, "Newer", "2", 6)
+    base, _ = start()
+    status, reply = _call(base, "/api/episodes?feed=Blog")
+    assert status == 200
+    assert [(e["title"], e["id"], e["picture"], e["in_library"]) for e in reply["episodes"]] == [
+        ("Newer", "2", False, True), ("Older", "1", False, True)]
+    status, reply = _call(base, "/api/episodes?feed=Nope")
+    assert status == 404 and "No feed called" in reply["error"]
+
+
+def test_fetch_again_forgets_then_runs_the_feed_as_one_job(running, monkeypatch):
+    start, library = running
+    _blog_post(library, "A post", "1", 6)
+    asked = []
+
+    def fake_run(config, *, dry_run=False, only=None):
+        asked.append(only)
+        return Summary(fetched=1)
+
+    monkeypatch.setattr(server, "run", fake_run)
+    base, _ = start()
+    status, job = _call(base, "/api/forget", {"feed": "Blog", "ids": ["1"]})
+    assert status == 202
+    job = _wait(base, job)
+    assert job["ok"], job
+    assert job["kind"] == "fetch again (Blog)" and job["result"] == "1 forgotten, 1 fetched again."
+    assert "Forgot A post" in job["output"]
+    assert asked == [["Blog"]]
+    _, reply = _call(base, "/api/episodes?feed=Blog")
+    assert reply["episodes"] == []
+
+
+def test_fetch_again_waits_for_no_one(running, monkeypatch):
+    start, library = running
+    _blog_post(library, "A post", "1", 6)
+    release = threading.Event()
+
+    def slow_run(config, *, dry_run=False, only=None):
+        release.wait(5)
+        return Summary()
+
+    monkeypatch.setattr(server, "run", slow_run)
+    base, _ = start()
+    _, first = _call(base, "/api/run", {})
+    status, reply = _call(base, "/api/forget", {"feed": "Blog", "ids": ["1"]})
+    release.set()
+    _wait(base, first)
+    assert status == 409 and "is going" in reply["error"]
+    _, reply = _call(base, "/api/episodes?feed=Blog")
+    assert [e["title"] for e in reply["episodes"]] == ["A post"]
+
+
+@pytest.mark.parametrize("body", [{}, {"feed": "Blog"}, {"feed": "Blog", "ids": []}, {"feed": "", "ids": ["1"]}])
+def test_fetch_again_needs_a_feed_and_episodes(running, body):
+    start, _ = running
+    base, _ = start()
+    status, reply = _call(base, "/api/forget", body)
+    assert status == 422 and reply["error"]

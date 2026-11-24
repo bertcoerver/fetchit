@@ -54,6 +54,8 @@ fetchit run                            # download it
 fetchit run --feed "The Daily Show"    # one feed only
 fetchit fields --feed "The Daily Show" # the fields an item has, for writing filters
 fetchit prune                          # delete what has outlived its keep_days (runs do this too)
+fetchit forget "The Daily Show"        # list a feed's episodes, with their ids
+fetchit forget "The Daily Show" "Ep 4" # delete an episode so the next run fetches it again
 fetchit doctor                         # check ffmpeg, yt-dlp, the config and the library
 ```
 
@@ -69,7 +71,8 @@ FETCHIT_SCHEDULE=01:00,06:00,14:30 fetchit serve     # http://127.0.0.1:8099/
 
 `fetchit serve` stays running, runs at those times, and serves a page with every
 feed and what the library holds of it, run / dry run / prune buttons with their
-output, recent downloads and the log. Only this machine may open it, unless
+output, each feed's episodes with a "fetch again" button, recent downloads and the
+log. Only this machine may open it, unless
 `FETCHIT_GUI_FROM` lists other addresses. It is what the Home Assistant add-on
 runs, as its sidebar panel. `FETCHIT_UPDATE_YT_DLP=1` upgrades yt-dlp before a
 scheduled run, once a day; `FETCHIT_KEEP_DAYS` is the default `keep_days` for a
@@ -146,6 +149,13 @@ pruned.
   and a video its source has taken down (an expired ARTE rights window, or one
   listed for a week without a video).
 - **Undated items are never downloaded.** There is no telling whether they are new.
+
+To have an episode downloaded again — one that arrived without its picture, say —
+`fetchit forget <feed> <episode>` deletes it and lets the feed take it once more.
+The episode is its id or text from its title that no other episode of the feed
+has; `fetchit forget <feed>` lists them. The next run of the feed fetches it
+again, as long as its source still lists it: one that has gone from the source
+is gone for good. Forgetting waits for no run: while one is going, it refuses.
 
 ## Kinds of item
 
