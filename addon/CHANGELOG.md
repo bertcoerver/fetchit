@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.13
+
+- Forget an episode so the next run fetches it again
+
 ## 0.1.12
 
 - Show a Les Mini Mondes feed by the magazine's logo
