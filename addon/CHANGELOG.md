@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+
+- Fix the panel's "+ New list" tab once a link list exists
+- Take a Bayam track the magazine lists twice as one episode
+
 ## 0.1.7
 
 - Read Les Mini Mondes magazine links, and take only readable links into a link list
