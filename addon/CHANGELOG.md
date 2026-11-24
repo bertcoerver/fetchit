@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Retry feeds that time out while being read instead of failing the run with a traceback
+
 ## 0.1.3
 
 - Add functionality to manage Bayam magazine links in the UI and backend
