@@ -48,6 +48,8 @@ options:
     - "14:30"
   keep_days: 30
   update_yt_dlp: true
+  notify: []
+  notify_token: ""
   log_level: info
 
 schema:
@@ -66,4 +68,11 @@ schema:
   keep_days: int(0,3650)
   # YouTube extraction breaks often enough that a pinned yt-dlp rots.
   update_yt_dlp: bool
+  # URLs to POST to after a run that downloaded something, naming the feeds
+  # that got something new — rssignal's http://<its hostname>:8099/api/fetched,
+  # so it sends what came in at once instead of at its next scheduled run.
+  notify:
+    - url
+  # Sent along as `Authorization: Bearer <token>`: rssignal's `api_token`.
+  notify_token: password?
   log_level: list(trace|debug|info|warning|error|fatal)

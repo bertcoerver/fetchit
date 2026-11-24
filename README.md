@@ -78,6 +78,12 @@ runs, as its sidebar panel. `FETCHIT_UPDATE_YT_DLP=1` upgrades yt-dlp before a
 scheduled run, once a day; `FETCHIT_KEEP_DAYS` is the default `keep_days` for a
 config that doesn't say.
 
+`FETCHIT_NOTIFY` lists URLs (comma-separated) that every run which downloaded
+something POSTs to, wherever it was started from: `{"source": "fetchit",
+"fetched": 2, "feeds": [...]}`, naming the feeds that got something new.
+`FETCHIT_NOTIFY_TOKEN` goes along as a bearer token. Point it at rssignal's
+`/api/fetched` and rssignal sends new items as soon as they land.
+
 ## Configuration
 
 ```json

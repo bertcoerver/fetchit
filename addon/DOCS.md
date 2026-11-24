@@ -85,6 +85,8 @@ after the panel loaded it, the save is refused rather than overwrite that edit:
 | `schedule` | `01:00`, `06:00`, `14:30` | Local times to run at. |
 | `keep_days` | `30` | How long downloads stay, unless a feed says otherwise. `0` keeps everything. The config file's own `keep_days` wins over this. |
 | `update_yt_dlp` | `true` | Upgrade yt-dlp once a day, before a run. |
+| `notify` | (none) | URLs to tell after a run that downloaded something. See below. |
+| `notify_token` | (none) | Sent with them as `Authorization: Bearer <token>`. |
 | `log_level` | `info` | |
 
 ### Scheduling the three together
@@ -94,6 +96,30 @@ downloaded — for example fetchit at 01:00, 06:00 and 14:30, rssignal at 01:30,
 06:30 and 15:00, and db-podcast at 02:00, 07:00 and 15:30. Nothing breaks if they
 overlap: fetchit moves each item into place with its record last, so a reader sees
 either all of an item or none of it, and it picks up the rest next time.
+
+### Telling rssignal straight away
+
+Rather than wait for its next scheduled run, rssignal can send what fetchit
+downloaded the moment a run ends. After any run that downloaded something,
+fetchit POSTs the names of the feeds that got something new to each URL in
+`notify`:
+
+```json
+{"source": "fetchit", "fetched": 2, "feeds": ["Bureau Buitenland", "3Blue1Brown"]}
+```
+
+rssignal runs if one of those feeds is one it sends from, and ignores the rest.
+To set it up:
+
+1. In rssignal's options, set an `api_token` (any long random string).
+2. Here, add `http://<rssignal's hostname>:8099/api/fetched` to `notify` — the
+   hostname is on rssignal's **Info** page, something like `a67c9053-rssignal`
+   — and put the same token in `notify_token`.
+3. Restart fetchit.
+
+The log says `notified …` after each run that told rssignal, or why it could
+not. A missed notification costs nothing: rssignal's own schedule still finds
+the new items.
 
 ## Jellyfin
 

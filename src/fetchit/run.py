@@ -42,6 +42,7 @@ from . import cache, timing
 from .config import Config, ConfigError
 from .download import download_to, suffix_for
 from .errorlog import log_exception, log_line
+from .notify import notify
 from .feeds import (
     FeedConfig,
     FeedError,
@@ -104,6 +105,8 @@ class Summary:
     failed: int = 0
     blocked: int = 0
     pruned: int = 0
+    # The feeds that got something new, by name, for :mod:`fetchit.notify`.
+    feeds: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -253,6 +256,8 @@ def _locked_run(config: Config, feeds: list[FeedConfig], *, dry_run: bool) -> Su
                 fetched, skipped = fetch_feed(config, cfg, listing, state, dry_run=dry_run)
                 summary.fetched += fetched
                 summary.skipped += skipped
+                if fetched and not dry_run:
+                    summary.feeds.append(cfg.name)
             except SourceBlocked as exc:
                 # Nothing went wrong: the source is deliberately unreachable
                 # right now, and the feed picks up where it was next run.
@@ -286,6 +291,8 @@ def _locked_run(config: Config, feeds: list[FeedConfig], *, dry_run: bool) -> Su
             "this machine.",
             file=sys.stderr,
         )
+    if summary.feeds:
+        notify(summary.feeds, summary.fetched)
     pruned = f", {summary.pruned} expired" if summary.pruned else ""
     log_line(
         f"run finished in {_duration(started)}: {summary.fetched} item(s) "

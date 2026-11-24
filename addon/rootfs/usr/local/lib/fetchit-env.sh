@@ -32,6 +32,11 @@ FETCHIT_UPDATE_YT_DLP="$(bashio::config 'update_yt_dlp')"
 export FETCHIT_SCHEDULE FETCHIT_KEEP_DAYS FETCHIT_UPDATE_YT_DLP
 export FETCHIT_GUI_FROM="172.30.32.2"
 
+# Who to tell when a run downloaded something (see fetchit.notify).
+FETCHIT_NOTIFY="$(jq -r '(.notify // []) | join(",")' /data/options.json)"
+FETCHIT_NOTIFY_TOKEN="$(jq -r '.notify_token // ""' /data/options.json)"
+export FETCHIT_NOTIFY FETCHIT_NOTIFY_TOKEN
+
 # A cookies.txt beside fetchit.json, for when YouTube asks to "confirm you're
 # not a bot". Off unless the file is there.
 if [ -f /config/youtube-cookies.txt ]; then
