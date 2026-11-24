@@ -157,7 +157,8 @@ def parse_bayam(cfg: FeedConfig) -> ParsedFeed:
     released = _released(magazine["released"])
 
     items = []
-    for index, (name, audio_url) in enumerate(magazine["audio"]):
+    # Again here, for an issue remembered from before repeats were dropped.
+    for index, (name, audio_url) in enumerate(_unique(magazine["audio"])):
         extra = {
             "id": f"bayam:{magazine['sku']}:{index + 1}",
             "bayam_sku": magazine["sku"],
@@ -299,7 +300,22 @@ def _audio(content: dict) -> list[tuple[str, str]]:
                 for chapter in track["chapters"]
                 if chapter["audio_url"]
             )
-    return audio
+    return _unique(audio)
+
+
+def _unique(audio) -> list[tuple[str, str]]:
+    """``audio`` with each file once, where it first comes.
+
+    The CMS sometimes lists a track twice — name, file and all (issue 301 of
+    Mes premières Belles Histoires does) — and it is one story, not two.
+    """
+    seen: set[str] = set()
+    out = []
+    for name, url in audio:
+        if url not in seen:
+            seen.add(url)
+            out.append((name, url))
+    return out
 
 
 def _released(value: str | None) -> datetime | None:

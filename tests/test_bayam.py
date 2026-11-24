@@ -197,3 +197,30 @@ def test_is_bayam_link():
     assert is_bayam_link("https://app.bayam.tv/mag/almyre310")
     assert not is_bayam_link("https://www.bayam.tv/")
     assert not is_bayam_link(None)
+
+
+def test_audio_lists_a_repeated_track_once():
+    """Test that a track the CMS lists twice is one track."""
+    track = {
+        "name": "Bonne nuit, Père Noël !",
+        "audio_url": "https://x.test/301.mp3",
+        "chapters": [{"name": "Bonne nuit, Père Noël !", "audio_url": "https://x.test/301-01.mp3"}],
+    }
+    assert _audio({"tracks": [track, dict(track)]}) == [
+        ("Bonne nuit, Père Noël !", "https://x.test/301.mp3")
+    ]
+
+
+def test_a_remembered_issue_with_a_repeated_track_is_one_item(monkeypatch):
+    """Test that an issue cached before repeats were dropped still gives one item."""
+    from fetchit import bayam
+    from fetchit.feeds import FeedConfig
+
+    issue = {
+        "sku": "TRAN0301", "title": "", "cover": None, "released": None, "number": 301,
+        "collection": "Mes premières Belles Histoires",
+        "audio": [["Bonne nuit", "https://x.test/301.mp3"], ["Bonne nuit", "https://x.test/301.mp3"]],
+    }
+    monkeypatch.setattr(bayam, "_magazine", lambda url: issue)
+    items = bayam.parse_bayam(FeedConfig(url="https://flyer.bayam.tv/4sYB/xcp", name="x")).items
+    assert [item.extra["id"] for item in items] == ["bayam:TRAN0301:1"]
