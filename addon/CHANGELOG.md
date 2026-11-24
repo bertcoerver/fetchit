@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- Take everything behind a link list's links, however old
+
 ## 0.1.5
 
 - Keep a feed's links in a file of their own, one tab per list in the panel
