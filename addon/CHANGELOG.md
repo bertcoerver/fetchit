@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11
+
+- First release installed from the add-on repository.
+
 ## 0.1.10
 
 - Send fetchit's own User-Agent with every download
