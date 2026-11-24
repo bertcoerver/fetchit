@@ -97,8 +97,6 @@ RSSIGNAL_KEYS = (
     "preview_url",
     "preview_title",
     "preview_description",
-    "episodic",
-    "start",
     "source",
 )
 
@@ -232,9 +230,8 @@ class FeedConfig:
     ``since`` turns the feed into a backfill: everything published after it is
     wanted, oldest first, ``max_per_run`` at a time — and, if ``max_per_day``
     is set, no more than that in any 24 hours, which is how a backfill is kept
-    in step with something sending it on at a pace (an episodic feed in
-    rssignal) rather than racing ahead of it and being pruned before it is
-    sent. Without ``since``, a feed seen for the first time takes only its
+    to a pace: rssignal sends whatever arrives, so this is what walks a
+    series one episode a day rather than all at once. Without ``since``, a feed seen for the first time takes only its
     newest item, and everything after that.
 
     ``quality`` is which rendition of a video to download (see
@@ -593,6 +590,12 @@ def _build_filters(raw: dict, where: str) -> tuple[FeedFilter, ...]:
     for key, value in raw.items():
         if key in KNOWN_KEYS:
             continue
+        if key in ("episodic", "start"):
+            raise FeedError(
+                f"{where} has {key!r}. Pacing a series is done here, by "
+                "downloading it slowly: give the feed \"since\" (where to "
+                "begin) and \"max_per_day\" instead."
+            )
         if key in RSSIGNAL_KEYS:
             raise FeedError(
                 f"{where} has {key!r}, which is about sending rather than "

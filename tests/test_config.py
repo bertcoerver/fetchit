@@ -155,3 +155,10 @@ def test_keep_days_from_the_environment_when_the_file_does_not_say(tmp_path, mon
     monkeypatch.setenv("FETCHIT_KEEP_DAYS", "21")
     assert load_config(_config(tmp_path, _feeds(FEED))).keep_days == 21
     assert load_config(_config(tmp_path, _feeds(FEED, keep_days=3))).keep_days == 3
+
+
+@pytest.mark.parametrize("key", ["episodic", "start"])
+def test_pacing_keys_point_at_since_and_max_per_day(tmp_path, key):
+    data = _feeds({**FEED, key: "daily"})
+    with pytest.raises(FeedError, match="max_per_day"):
+        load_config(_config(tmp_path, data))

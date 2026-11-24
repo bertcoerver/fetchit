@@ -125,7 +125,7 @@ Each feed:
 Filters decide what is *downloaded*. They are all ANDed, read the fields
 `fetchit fields` lists, and are applied before anything is recorded — so changing
 one later applies to new items. Keys that are about sending (`message_template`,
-`episodic`, `link_preview`, …) belong in rssignal's `feeds.json`, and fetchit says
+`link_preview`, …) belong in rssignal's `feeds.json`, and fetchit says
 so if it finds one.
 
 ## What is new
@@ -143,9 +143,8 @@ pruned.
 - **`since` makes a feed a backfill**: everything published since that date,
   oldest first. For a YouTube channel that includes the whole back catalogue,
   read from its uploads playlist (no API key), dated 25 videos a run. Pair it with
-  `max_per_day` when something downstream walks the series at a pace — an
-  `episodic` feed in rssignal — so the library stays a step ahead of it rather than
-  racing ahead and having episodes pruned before they are sent.
+  `max_per_day` to walk a series at a pace: rssignal sends whatever arrives, so
+  `"max_per_day": 1` is one episode a day in its Signal group.
 - **Items arrive in publication order.** An item that can't be downloaded right
   now stops its feed for this run, and the next run starts with it. A newer item
   is never filed while an older one is owed — whatever reads the library by date
