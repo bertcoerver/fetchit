@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.12
+
+- Show a Les Mini Mondes feed by the magazine's logo
+- List workflow changes in the add-on changelog
+
 ## 0.1.11
 
 - Move the workflows' actions onto Node 24
