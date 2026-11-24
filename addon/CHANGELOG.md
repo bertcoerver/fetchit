@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- Name artwork for what it is, and show a Bayam magazine by its logo
+
 ## 0.1.8
 
 - Fix the panel's "+ New list" tab once a link list exists
