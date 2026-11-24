@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15
+
+- Point episodic and start at since and max_per_day
+
 ## 0.1.14
 
 - Tell other programs when a run downloaded something
