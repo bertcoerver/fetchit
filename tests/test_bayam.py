@@ -224,3 +224,24 @@ def test_a_remembered_issue_with_a_repeated_track_is_one_item(monkeypatch):
     monkeypatch.setattr(bayam, "_magazine", lambda url: issue)
     items = bayam.parse_bayam(FeedConfig(url="https://flyer.bayam.tv/4sYB/xcp", name="x")).items
     assert [item.extra["id"] for item in items] == ["bayam:TRAN0301:1"]
+
+
+def test_the_feed_shows_the_magazines_logo_and_each_track_its_issue(magazine, monkeypatch):
+    """One issue's cover as the feed's artwork would make it look like that issue."""
+    from fetchit import bayam
+    from fetchit.bayam import magazine_image, parse_bayam
+    from fetchit.feeds import FeedConfig
+
+    content = {**CONTENT, "collection": {"name": "Mes premières Belles Histoires",
+                                         "logo_url": "https://static.bayard.io/logos/MPBH.jpg"}}
+    monkeypatch.setattr(bayam, "_fetch_content", lambda sku: content)
+    feed = parse_bayam(FeedConfig(url=LINK + "logo", name="Belles Histoires"))
+    assert feed.image_url == "https://static.bayard.io/logos/MPBH.jpg"
+    assert feed.items[0].image_url == "https://cdn.bayam/covers/MBH288%20couverture.jpg"
+    assert magazine_image(LINK + "logo") == "https://static.bayard.io/logos/MPBH.jpg"
+
+
+def test_a_magazine_without_a_logo_shows_its_issue(magazine):
+    from fetchit.bayam import magazine_image
+
+    assert magazine_image(LINK + "nologo") == "https://cdn.bayam/covers/MBH288%20couverture.jpg"

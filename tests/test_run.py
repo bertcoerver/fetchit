@@ -321,6 +321,51 @@ def test_artwork_is_fetched_once_a_feed_has_a_folder(world, monkeypatch):
     assert fetched == []  # checked again in a week, not every run
 
 
+def test_a_png_poster_is_filed_as_one_and_a_misnamed_one_is_put_right_at_once(world, monkeypatch):
+    """A URL that says .jpg of a PNG; and the poster fetchit misnamed before."""
+    png = b"\x89PNG\r\n\x1a\n a png"
+    picture = {"data": png}
+    fetched = []
+
+    def fake_download(url, path, **kwargs):
+        fetched.append(url)
+        with open(path, "wb") as fh:
+            fh.write(picture["data"])
+
+    monkeypatch.setattr(run, "download_to", fake_download)
+    monkeypatch.setattr(run, "feed_image", lambda cfg: "https://img/channel.jpg")
+    world.items[CHANNEL.url] = [_video(1)]
+    run.run(world.config(CHANNEL))
+    folder = os.path.join(world.root, "shows", "Channel")
+    assert {"poster.png", "fanart.png"} <= set(os.listdir(folder))
+    assert not {"poster.jpg", "fanart.jpg"} & set(os.listdir(folder))
+
+    # As fetchit used to leave it: a PNG called poster.jpg, recorded as its own.
+    for name in ("poster", "fanart"):
+        os.replace(os.path.join(folder, name + ".png"), os.path.join(folder, name + ".jpg"))
+    fetched.clear()
+    picture["data"] = b"\xff\xd8\xff\xe0 a jpeg"
+    _relabel_artwork(world, "Channel", ".png", ".jpg")
+    run.run(world.config(CHANNEL))
+    assert fetched == ["https://img/channel.jpg"]  # not a week later
+    assert open(os.path.join(folder, "poster.jpg"), "rb").read() == picture["data"]
+    assert "poster.png" not in os.listdir(folder)
+
+
+def _relabel_artwork(world, feed, old, new):
+    """Rename the artwork fetchit's state remembers, as if it had been written so."""
+    import glob
+    for path in glob.glob(os.path.join(world.root, ".fetchit", "**", "*.json"), recursive=True):
+        text = open(path, encoding="utf-8").read()
+        if '"artwork"' in text:
+            data = json.loads(text)
+            entry = data.get("feeds", {}).get(feed)
+            if entry and "artwork" in entry:
+                entry["artwork"] = {k.replace(old, new): v for k, v in entry["artwork"].items()}
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh)
+
+
 def _with_etag(world, monkeypatch):
     real = run.parse_feed
 

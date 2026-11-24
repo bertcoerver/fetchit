@@ -335,3 +335,68 @@ def test_prune_clears_what_a_killed_run_left_in_staging(tmp_path):
     prune(root, {})
     assert not os.path.exists(leftover)
     assert os.path.exists(fresh)
+
+
+PNG = b"\x89PNG\r\n\x1a\n a png"
+JPEG = b"\xff\xd8\xff\xe0 a jpeg"
+
+
+def test_artwork_is_named_for_what_it_is(tmp_path):
+    root = str(tmp_path)
+    cfg = FeedConfig(url="https://a/feed", name="Cartes")
+    folder = tmp_path / "podcasts" / "Cartes"
+    written = update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "v1.jpg", PNG), {})
+    assert (folder / "cover.png").read_bytes() == PNG
+    assert not (folder / "cover.jpg").exists()
+    assert written == {os.path.join("podcasts", "Cartes", "cover.png"): library._hash_file(folder / "cover.png")}
+
+    # A JPEG later takes the PNG's place, rather than standing beside it.
+    written = update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "v2.png", JPEG), written)
+    assert sorted(os.listdir(folder)) == ["cover.jpg"]
+    assert list(written) == [os.path.join("podcasts", "Cartes", "cover.jpg")]
+
+
+def test_a_misnamed_cover_from_before_is_put_right(tmp_path):
+    """What fetchit wrote as cover.jpg when it was a PNG, before it knew better."""
+    root = str(tmp_path)
+    cfg = FeedConfig(url="https://a/feed", name="Cartes")
+    folder = tmp_path / "podcasts" / "Cartes"
+    folder.mkdir(parents=True)
+    old = _file(folder / "cover.jpg", PNG)
+    written = {os.path.join("podcasts", "Cartes", "cover.jpg"): library._hash_file(old)}
+    assert library.misnamed(old)
+
+    update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "new.jpg", JPEG), written)
+    assert sorted(os.listdir(folder)) == ["cover.jpg"]
+    assert (folder / "cover.jpg").read_bytes() == JPEG
+
+
+def test_a_misnamed_cover_is_renamed_even_when_it_is_not_refreshed(tmp_path):
+    root = str(tmp_path)
+    cfg = FeedConfig(url="https://a/feed", name="Cartes", refresh_image=False)
+    folder = tmp_path / "podcasts" / "Cartes"
+    folder.mkdir(parents=True)
+    old = _file(folder / "cover.jpg", PNG)
+    written = {os.path.join("podcasts", "Cartes", "cover.jpg"): library._hash_file(old)}
+    written = update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "new.jpg", JPEG), written)
+    assert sorted(os.listdir(folder)) == ["cover.png"]
+    assert (folder / "cover.png").read_bytes() == PNG
+    assert list(written) == [os.path.join("podcasts", "Cartes", "cover.png")]
+
+
+def test_a_cover_somebody_chose_stays_under_either_name(tmp_path):
+    root = str(tmp_path)
+    cfg = FeedConfig(url="https://a/feed", name="Cartes")
+    folder = tmp_path / "podcasts" / "Cartes"
+    folder.mkdir(parents=True)
+    _file(folder / "cover.png", PNG)
+    update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "new.jpg", JPEG), {})
+    assert sorted(os.listdir(folder)) == ["cover.png"]
+
+
+def test_feed_json_names_the_cover_that_is_there(tmp_path):
+    root = str(tmp_path)
+    cfg = FeedConfig(url="https://a/feed", name="Cartes")
+    update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "v1.jpg", PNG), {})
+    write_feed(root, cfg, ParsedFeed(items=[], title="Cartes"), {AUDIO})
+    assert _record(tmp_path / "podcasts" / "Cartes" / "feed.json")["image"] == "cover.png"

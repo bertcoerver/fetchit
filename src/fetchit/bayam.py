@@ -72,6 +72,7 @@ query ($sku: String) {
     magazine_number
     collection {
       name
+      logo_url
     }
     tracks(sort: ["order"]) {
       name
@@ -189,7 +190,9 @@ def parse_bayam(cfg: FeedConfig) -> ParsedFeed:
 
     return ParsedFeed(
         items=[apply_extracts(item, cfg.extract) for item in items],
-        image_url=magazine["cover"],
+        # The magazine's own square logo, which every issue shares; one issue's
+        # cover would make the feed look like that one issue.
+        image_url=magazine.get("logo") or magazine["cover"],
         description=f"Histoires audio du magazine {collection}." if collection else "",
         title=collection,
         link=BAYAM_URL,
@@ -199,8 +202,9 @@ def parse_bayam(cfg: FeedConfig) -> ParsedFeed:
 
 
 def magazine_image(url: str) -> str:
-    """The cover of the issue behind ``url``."""
-    cover = _magazine(url)["cover"]
+    """The magazine's logo, or the cover of the issue behind ``url`` if it has none."""
+    magazine = _magazine(url)
+    cover = magazine.get("logo") or magazine["cover"]
     if not cover:
         raise BayamError(f"Bayam has no cover for {url}")
     return cover
@@ -216,7 +220,8 @@ def resolve(item: FeedItem) -> BayamPlan:
 def _magazine(url: str) -> dict:
     """What the issue behind ``url`` holds, asked once and remembered for good."""
     hit = cache.get(_MAGAZINE_NS, url)
-    if isinstance(hit, dict) and {"sku", "audio", "cover"} <= set(hit):
+    # "logo" came later: an issue remembered without one is asked again, once.
+    if isinstance(hit, dict) and {"sku", "audio", "cover", "logo"} <= set(hit):
         return hit
 
     access_code = _resolve_access_code(url)
@@ -234,6 +239,7 @@ def _magazine(url: str) -> dict:
         "released": content["release_date_prev"],
         "number": content["magazine_number"],
         "collection": (content["collection"] or {}).get("name"),
+        "logo": _encode_uri(logo) if (logo := (content["collection"] or {}).get("logo_url")) else None,
     }
     cache.put(_MAGAZINE_NS, url, magazine)
     return magazine

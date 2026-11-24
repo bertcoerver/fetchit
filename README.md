@@ -312,7 +312,9 @@ The layout is the contract between fetchit and whatever reads it.
   as title, and its date. `cover.jpg` is the album's artwork.
 - **Artwork** is checked against the source about once a week. A poster or cover
   you replaced by hand is left alone; one fetchit put there is brought up to date
-  unless the feed says `"refresh_image": false`.
+  unless the feed says `"refresh_image": false`. A picture is named for what it is:
+  a PNG is `cover.png` (or `poster.png`), whatever its URL said. A Bayam magazine's
+  feed shows the magazine's logo; each story keeps its issue's cover.
 - **Names** keep accents, spaces and capitals, and lose only what a filesystem or a
   Samba share refuses.
 

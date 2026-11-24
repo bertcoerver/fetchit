@@ -87,10 +87,48 @@ SHOW_NFO = "tvshow.nfo"
 THUMB_SUFFIX = "-thumb"
 
 # The pictures a feed's folder is shown by: a series by its poster and the
-# backdrop behind its page, an album or a feed of articles by its cover.
+# backdrop behind its page, an album or a feed of articles by its cover. The
+# suffix is the usual one; a picture that is a PNG is written as .png (see
+# :func:`image_suffix`).
 FEED_IMAGES = {VIDEO: ("poster.jpg", "fanart.jpg"), AUDIO: ("cover.jpg",), TEXT: ("cover.jpg",)}
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png")
+
+
+def image_suffix(path: str) -> str | None:
+    """The suffix that fits what is in the picture ``path``: ``.jpg`` or ``.png``.
+
+    By its first bytes, not its name: a source's URL may well say .jpg of a
+    PNG, and whatever shows the file by its name — a web server, Jellyfin, a
+    podcast app — goes by the name. ``None`` for anything else.
+    """
+    try:
+        with open(path, "rb") as file:
+            head = file.read(8)
+    except OSError:
+        return None
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    return None
+
+
+def feed_artwork(folder: str, name: str) -> str | None:
+    """The file in ``folder`` that is the feed picture ``name``, whatever its suffix."""
+    stem = os.path.splitext(name)[0]
+    for ext in IMAGE_EXTS:
+        path = os.path.join(folder, stem + ext)
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def misnamed(path: str) -> bool:
+    """Whether the picture ``path`` is named for another format than it is."""
+    actual = image_suffix(path)
+    named = os.path.splitext(path)[1].lower()
+    return actual is not None and actual != {".jpeg": ".jpg"}.get(named, named)
 
 # Long enough to tell two episodes of the same show apart, short enough that a
 # feed name, an episode number and a title stay under the 255 bytes most
@@ -479,7 +517,9 @@ def write_feed(root: str, cfg: FeedConfig, parsed: ParsedFeed, kinds: set[str]) 
             "author": parsed.author or old.get("author") or "",
             "language": cfg.language or parsed.language or old.get("language") or "",
             "explicit": bool(old.get("explicit", False)),
-            "image": FEED_IMAGES[kind][0],
+            "image": os.path.basename(
+                feed_artwork(folder, FEED_IMAGES[kind][0]) or FEED_IMAGES[kind][0]
+            ),
         }
         if meta != old:
             _write_json_atomic(path, meta)
@@ -507,24 +547,48 @@ def update_artwork(
     a better poster, a tall one — and is left alone. One that is missing is
     always written; one that holds an older picture is brought up to date
     unless the feed says ``"refresh_image": false``.
+
+    The file is named for what ``image`` is: ``cover.png`` for a PNG, and a
+    ``cover.jpg`` fetchit wrote before is then taken away. One somebody put
+    there, under either name, still stands.
     """
     digest = _hash_file(image)
+    suffix = image_suffix(image) or ".jpg"
     written = dict(last_written)
     for kind in sorted(kinds):
         folder = feed_folder(root, cfg.name, kind)
         for name in FEED_IMAGES[kind]:
-            path = os.path.join(folder, name)
+            stem = os.path.splitext(name)[0]
+            path = os.path.join(folder, stem + suffix)
             key = os.path.relpath(path, root)
-            on_disk = _hash_file(path) if os.path.exists(path) else None
-            if on_disk is not None:
-                if on_disk == digest:
-                    written[key] = digest
-                    continue
-                if on_disk != written.get(key) or not cfg.refresh_image:
-                    continue
-            os.makedirs(folder, exist_ok=True)
-            _copy_atomic(image, path)
+            existing = {}
+            for ext in IMAGE_EXTS:
+                other = os.path.join(folder, stem + ext)
+                if os.path.isfile(other):
+                    existing[other] = _hash_file(other)
+            ours = {
+                other: h for other, h in existing.items()
+                if h == digest or h == written.get(os.path.relpath(other, root))
+            }
+            if len(ours) < len(existing):
+                continue  # somebody chose this picture
+            if existing and not cfg.refresh_image:
+                # Keep the picture, but under the name of what it is.
+                for other, h in ours.items():
+                    if misnamed(other):
+                        renamed = os.path.join(folder, stem + image_suffix(other))
+                        written.pop(os.path.relpath(other, root), None)
+                        os.replace(other, renamed)
+                        written[os.path.relpath(renamed, root)] = h
+                continue
+            if existing.get(path) != digest:
+                os.makedirs(folder, exist_ok=True)
+                _copy_atomic(image, path)
             written[key] = digest
+            for other in ours:
+                if other != path:
+                    os.remove(other)
+                    written.pop(os.path.relpath(other, root), None)
     return written
 
 

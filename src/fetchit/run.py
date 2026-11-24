@@ -56,6 +56,9 @@ from .feeds import (
 from .library import (
     FEED_IMAGES,
     IMAGE_EXTS,
+    feed_artwork,
+    image_suffix,
+    misnamed,
     STATE_DIR,
     feed_folders,
     place,
@@ -383,6 +386,12 @@ def _download_image(url: str | None, into: str, label: str) -> str | None:
     except FeedError as exc:
         print(f"[{label}] picture skipped: {exc}", file=sys.stderr)
         return None
+    # Named for what arrived, not for what the URL said would.
+    actual = image_suffix(path)
+    if actual and actual != suffix and not (actual == ".jpg" and suffix == ".jpeg"):
+        renamed = os.path.splitext(path)[0] + actual
+        os.replace(path, renamed)
+        path = renamed
     return path
 
 
@@ -416,10 +425,15 @@ def _refresh_artwork(root: str, cfg: FeedConfig, parsed: ParsedFeed, state: Stat
     folders = feed_folders(root, cfg.name)
     if not folders:
         return
+    ours = state.artwork(cfg.name)
+    found = [
+        feed_artwork(folder, image) for kind, folder in folders for image in FEED_IMAGES[kind]
+    ]
+    # Missing, or one of fetchit's under the wrong name: put right now, not in a week.
     missing = any(
-        not os.path.exists(os.path.join(folder, image))
-        for kind, folder in folders
-        for image in FEED_IMAGES[kind]
+        path is None
+        or (misnamed(path) and ours.get(os.path.relpath(path, root)) is not None)
+        for path in found
     )
     checked = state.artwork_checked(cfg.name)
     if not missing and checked is not None and datetime.now(timezone.utc) - checked < ARTWORK_EVERY:
