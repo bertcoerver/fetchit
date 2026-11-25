@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.16
+
+- Say where the add-on wants YouTube cookies, and when they have expired
+
 ## 0.1.15
 
 - Point episodic and start at since and max_per_day
