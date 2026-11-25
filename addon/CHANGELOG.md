@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Read a school blog on e-Primo, signed in through ÉduConnect
+
 ## 0.1.16
 
 - Say where the add-on wants YouTube cookies, and when they have expired
