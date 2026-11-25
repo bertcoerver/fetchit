@@ -115,6 +115,7 @@ def _signed_out(monkeypatch):
     """Whoever runs the tests may have cookies configured; the tests do not."""
     monkeypatch.delenv(youtube.COOKIES_ENV, raising=False)
     monkeypatch.delenv(youtube.COOKIES_FROM_BROWSER_ENV, raising=False)
+    monkeypatch.delenv(youtube.COOKIES_ADVICE_ENV, raising=False)
 
 
 def _patch_ytdlp(monkeypatch, *, info=None, returncode=0, stderr="", payload=b"video"):
@@ -492,6 +493,50 @@ def test_ytdlp_failure_on_the_bot_check_says_how_to_sign_in(monkeypatch, tmp_pat
 
     assert youtube.COOKIES_FROM_BROWSER_ENV in str(excinfo.value)
     assert youtube.COOKIES_ENV in str(excinfo.value)
+
+
+BOT_CHECK = "ERROR: [youtube] BFcjfKZ0BeI: Sign in to confirm you’re not a bot.\n"
+
+
+def _bot_checked(monkeypatch, tmp_path):
+    """The message fetching a video gives when YouTube asks for a bot check."""
+    _patch_ytdlp(monkeypatch)
+    plan = youtube.resolve(_item(), quality=BUDGET)
+    _patch_ytdlp(monkeypatch, returncode=1, stderr=BOT_CHECK)
+    with pytest.raises(FeedError) as excinfo:
+        plan.fetch(str(tmp_path), timeout=900)
+    return str(excinfo.value)
+
+
+def test_the_bot_check_gives_the_advice_of_whatever_runs_fetchit(monkeypatch, tmp_path):
+    monkeypatch.setenv(youtube.COOKIES_ADVICE_ENV, "Put youtube-cookies.txt beside fetchit.json.")
+
+    message = _bot_checked(monkeypatch, tmp_path)
+
+    assert "Put youtube-cookies.txt beside fetchit.json." in message
+    assert youtube.COOKIES_FROM_BROWSER_ENV not in message
+
+
+def test_the_bot_check_despite_a_cookies_file_says_it_has_expired(monkeypatch, tmp_path):
+    cookies = tmp_path / "cookies.txt"
+    cookies.write_text("# Netscape HTTP Cookie File\n")
+    monkeypatch.setenv(youtube.COOKIES_ENV, str(cookies))
+    monkeypatch.setenv(youtube.COOKIES_ADVICE_ENV, "Put youtube-cookies.txt beside fetchit.json.")
+
+    message = _bot_checked(monkeypatch, tmp_path)
+
+    assert "expired" in message
+    assert str(cookies) in message
+    assert "beside fetchit.json" not in message
+
+
+def test_the_bot_check_despite_a_browser_says_to_check_it(monkeypatch, tmp_path):
+    monkeypatch.setenv(youtube.COOKIES_FROM_BROWSER_ENV, "firefox")
+
+    message = _bot_checked(monkeypatch, tmp_path)
+
+    assert "firefox" in message
+    assert "still logged into" in message
 
 
 def test_a_cookies_file_is_passed_to_every_ytdlp_call(monkeypatch, tmp_path):

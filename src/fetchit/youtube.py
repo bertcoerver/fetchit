@@ -141,6 +141,12 @@ ARCHIVE_SHRINK_LIMIT = 0.9
 COOKIES_ENV = "FETCHIT_YOUTUBE_COOKIES"
 COOKIES_FROM_BROWSER_ENV = "FETCHIT_YOUTUBE_COOKIES_FROM_BROWSER"
 
+# How to hand fetchit cookies where it runs, said when the bot check comes back
+# with none configured. Something that wraps fetchit and has its own way — the
+# Home Assistant add-on reads a file beside fetchit.json — sets this, so the
+# advice is not about environment variables its user cannot set.
+COOKIES_ADVICE_ENV = "FETCHIT_YOUTUBE_COOKIES_ADVICE"
+
 # The distinctive part of that refusal, matched loosely because the wording
 # around it moves and the apostrophe is a typographic one.
 _BOT_CHECK = "not a bot"
@@ -1141,6 +1147,22 @@ def _complaint(stderr: str) -> str:
     last = _last_line(stderr)
     if _BOT_CHECK not in last.lower():
         return last
+    if os.environ.get(COOKIES_ENV, "").strip():
+        return (
+            f"{last}\nYouTube refused the signed-in session in "
+            f"{os.environ[COOKIES_ENV].strip()} too: its cookies have probably "
+            f"expired or been signed out. Export fresh ones from a browser "
+            f"logged into that account."
+        )
+    if os.environ.get(COOKIES_FROM_BROWSER_ENV, "").strip():
+        return (
+            f"{last}\nYouTube refused the signed-in session from "
+            f"{os.environ[COOKIES_FROM_BROWSER_ENV].strip()} too: check that "
+            f"browser is still logged into YouTube."
+        )
+    advice = os.environ.get(COOKIES_ADVICE_ENV, "").strip()
+    if advice:
+        return f"{last}\nYouTube wants a signed-in session for this one. {advice}"
     return (
         f"{last}\nYouTube wants a signed-in session for this one. Set "
         f"{COOKIES_FROM_BROWSER_ENV} to a browser you are logged into "

@@ -42,3 +42,4 @@ export FETCHIT_NOTIFY FETCHIT_NOTIFY_TOKEN
 if [ -f /config/youtube-cookies.txt ]; then
     export FETCHIT_YOUTUBE_COOKIES="/config/youtube-cookies.txt"
 fi
+export FETCHIT_YOUTUBE_COOKIES_ADVICE="Export a cookies.txt from a browser logged into a (throwaway) YouTube account and save it beside fetchit.json, in /addon_configs/<this add-on>/, as youtube-cookies.txt. The next run uses it."
