@@ -17,9 +17,10 @@ db-podcast, a media server — so it is written down here once::
             2026-10-19 - <Title>.mp3        tagged: album, title, artist, date
             2026-10-19 - <Title>.jpg
             2026-10-19 - <Title>.json
-        articles/<Feed>/                    text: items with nothing to download
+        articles/<Feed>/                    text: items with nothing to play
             feed.json  cover.jpg
             2026-10-19 - <Title>.json
+            2026-10-19 - <Title>-1.jpg      a post's photos, where it has a body
         .fetchit/                           fetchit's own: state, lock, staging
 
 **An item exists when its record does.** Everything an item consists of is
@@ -35,6 +36,14 @@ needs nothing else: ``title``, ``description``, ``published`` (ISO 8601),
 place in a series, ``number`` where the source numbers its episodes,
 ``duration`` in seconds, and ``fields`` — every field the source gave, as the
 strings a filter sees. ``format`` says which version of this layout it is.
+
+**A post with pictures in it has a body.** ``body`` is the item as it was
+written, in order: a list of ``{"type": "heading" | "text", "text": …}`` and
+``{"type": "image" | "video" | "audio", "file": …}``, each ``file`` a name
+beside the record. ``description`` still holds all of its text, and ``image``
+names its first picture, so a reader that knows nothing of bodies has a title,
+a text and a picture to show. Only a source that says so writes one — today
+that is a blog on e-Primo.
 
 **A video is filed as an episode.** Jellyfin and Emby build a series out of
 ``Season NN`` folders and ``SnnEnn`` names, with the ``.nfo`` files saying the
@@ -308,6 +317,7 @@ def write_item(
     item_id: str,
     media: str | None = None,
     image: str | None = None,
+    body: list[dict] | None = None,
 ) -> str:
     """File ``item`` in the library and return the path of its record.
 
@@ -315,6 +325,10 @@ def write_item(
     picture — and are *moved* into the library, so they should be in its
     staging folder (see :func:`staging_dir`) for that to be a rename. Either may
     be missing: a text item has no media, and plenty of items have no picture.
+
+    ``body`` is the item's body with its files downloaded (each file block a
+    ``path``); they are moved in the same way, as ``<stem>-1.jpg`` and so on.
+    Without an ``image`` of its own, the item's picture is the body's first.
 
     Everything is assembled in staging and moved into place with the record
     last; see the module docstring for why.
@@ -345,8 +359,26 @@ def write_item(
                 moves.append((staged, placement.path(suffix)))
                 files["image"] = placement.stem + suffix
 
+        blocks: list[dict] = []
+        for block in body or ():
+            source = block.get("path")
+            if not source:
+                blocks.append({"type": block["type"], "text": block.get("text", "")})
+                continue
+            number = sum(1 for b in blocks if "file" in b) + 1
+            ext = os.path.splitext(source)[1].lower() or ".bin"
+            suffix = f"-{number}{ext}"
+            staged = os.path.join(work, f"body{suffix}")
+            shutil.move(source, staged)
+            moves.append((staged, placement.path(suffix)))
+            blocks.append({"type": block["type"], "file": placement.stem + suffix})
+            if "image" not in files and block["type"] == "image" and ext in IMAGE_EXTS:
+                files["image"] = placement.stem + suffix
+
         duration = _duration(item, staged_media)
         record = _record(cfg, item, kind, item_id, placement, duration, **files)
+        if blocks:
+            record["body"] = blocks
 
         if kind == VIDEO:
             staged = os.path.join(work, "episode.nfo")
@@ -705,6 +737,8 @@ def _remove_item(record: dict) -> bool:
     except OSError:
         return False
     names = [record.get("media"), record.get("image"), stem + NFO_EXT]
+    body = record.get("body")
+    names += [b.get("file") for b in body if isinstance(b, dict)] if isinstance(body, list) else []
     for name in filter(None, names):
         try:
             os.unlink(os.path.join(folder, os.path.basename(str(name))))

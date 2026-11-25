@@ -6,6 +6,7 @@ Subcommands:
     prune           delete what has outlived its feed's keep_days
     forget          delete episodes and let the next run fetch them again
     doctor          check the tools, the config and the library
+    eprimo-login    sign in to e-Primo, for a school blog behind ÉduConnect
     serve           run on a schedule, with a web GUI
 """
 
@@ -173,6 +174,33 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _cmd_eprimo_login(args: argparse.Namespace) -> int:
+    import getpass
+
+    from . import eprimo
+    from .config import load_dotenv_once
+
+    load_dotenv_once()
+    if args.status:
+        since = eprimo.signed_in_since()
+        if since is None:
+            print("Not signed in to e-Primo.")
+            return 1
+        alive = eprimo.check()
+        print(f"Signed in to e-Primo on {since}; the session is {'still good' if alive else 'no longer accepted'}.")
+        return 0 if alive else 1
+    if args.forget:
+        eprimo.sign_out()
+        print("The e-Primo session is forgotten.")
+        return 0
+
+    user = args.user or input("ÉduConnect identifier: ").strip()
+    password = getpass.getpass("ÉduConnect password (used once, kept nowhere): ")
+    eprimo.sign_in(user, password)
+    print(f"Signed in. The session is kept in {eprimo.session_path()}; the password is not kept.")
+    return 0
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     from .server import serve
 
@@ -217,6 +245,17 @@ def _parser() -> argparse.ArgumentParser:
 
     doctor = commands.add_parser("doctor", help="check the tools, the config and the library")
     doctor.set_defaults(handler=_cmd_doctor)
+
+    login = commands.add_parser(
+        "eprimo-login",
+        help="sign in to e-Primo, for a school blog behind ÉduConnect",
+        description="Sign in to e-Primo through ÉduConnect and keep the session, so runs can read "
+                    "a school blog. The password is asked for, used once, and kept nowhere.",
+    )
+    login.add_argument("--user", help="the ÉduConnect identifier (asked for otherwise)")
+    login.add_argument("--status", action="store_true", help="say whether a session is kept and still accepted")
+    login.add_argument("--forget", action="store_true", help="forget the kept session")
+    login.set_defaults(handler=_cmd_eprimo_login)
 
     serve = commands.add_parser(
         "serve",

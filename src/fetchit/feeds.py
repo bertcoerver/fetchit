@@ -270,6 +270,11 @@ class FeedItem:
     else the feed happens to publish (``itunes_duration``, ``id``, …) lands in
     ``extra``. Use :func:`item_fields` to get the flat, stringified view that
     filters see, and that the library keeps in each item's record.
+
+    ``body`` is for an item that is something to read with pictures in it — a
+    blog post: its headings, paragraphs and files in the order they were
+    written, each a small mapping (see :func:`fetchit.eprimo.body_blocks`).
+    Empty for everything else, whose ``description`` is the whole of its text.
     """
 
     title: str
@@ -283,6 +288,7 @@ class FeedItem:
     categories: tuple[str, ...] = ()
     feed_name: str = ""
     extra: dict[str, str] = field(default_factory=dict)
+    body: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)

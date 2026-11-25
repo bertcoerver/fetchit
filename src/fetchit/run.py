@@ -71,7 +71,16 @@ from .library import (
     write_feed,
     write_item,
 )
-from .media import PERMANENT, TEXT, VIDEO_TIMEOUT, item_id, kind_of, resolve
+from .media import (
+    PERMANENT,
+    TEXT,
+    VIDEO_TIMEOUT,
+    fetch_body,
+    item_id,
+    kind_of,
+    request_headers,
+    resolve,
+)
 from .state import State
 
 # How long any one network read may sit there before it is given up on. This is
@@ -428,8 +437,13 @@ def _fetch_item(
         if kind != TEXT:
             plan = resolve(item, cfg.quality)
             media = plan.fetch(into, timeout=VIDEO_TIMEOUT)
-        image = _download_image(item.image_url, into, cfg.name)
-        return write_item(root, cfg, parsed, item, kind, item_id=iid, media=media, image=image)
+        body = fetch_body(item, into)
+        # A body's first picture is the item's picture: no second copy of it.
+        has_picture = any(b.get("path") and b["type"] == "image" for b in body)
+        image = None if has_picture else _download_image(item.image_url, into, cfg.name)
+        return write_item(
+            root, cfg, parsed, item, kind, item_id=iid, media=media, image=image, body=body
+        )
 
 
 def _download_image(url: str | None, into: str, label: str) -> str | None:
@@ -446,9 +460,13 @@ def _download_image(url: str | None, into: str, label: str) -> str | None:
     fd, path = tempfile.mkstemp(dir=into, prefix="image-", suffix=suffix)
     os.close(fd)
     try:
-        download_to(url, path)
+        download_to(url, path, headers=request_headers(url))
     except FeedError as exc:
         print(f"[{label}] picture skipped: {exc}", file=sys.stderr)
+        return None
+    if _is_web_page(path):
+        # What a source behind a sign-in sends in place of a picture it won't give.
+        print(f"[{label}] picture skipped: {url} answered with a web page", file=sys.stderr)
         return None
     # Named for what arrived, not for what the URL said would.
     actual = image_suffix(path)
@@ -457,6 +475,14 @@ def _download_image(url: str | None, into: str, label: str) -> str | None:
         os.replace(path, renamed)
         path = renamed
     return path
+
+
+def _is_web_page(path: str) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(64).lstrip()[:1] == b"<"
+    except OSError:
+        return False
 
 
 def _describe(config: Config, cfg: FeedConfig, item: FeedItem, kind: str, iid: str) -> bool:
@@ -472,6 +498,8 @@ def _describe(config: Config, cfg: FeedConfig, item: FeedItem, kind: str, iid: s
         except FeedError as exc:
             print(f"    unavailable right now ({exc}) — would stop this feed and retry")
             return False
+    elif files := sum(1 for block in item.body if "url" in block):
+        print(f"    text: a post with {files} file(s) to download beside its record")
     else:
         print("    text: nothing to download, filed as a record")
     placement = place(config.library, cfg.name, item, kind, item_id=iid)

@@ -104,6 +104,21 @@
       <pre id="job-output" class="hidden"></pre>
     </section>
 
+    <section class="hidden" id="eprimo-section">
+      <h2>e-Primo</h2>
+      <p class="config-line" id="eprimo-line" style="margin:0 0 10px"></p>
+      <form id="eprimo-form" autocomplete="off">
+        <label class="field">ÉduConnect identifier
+          <input id="eprimo-user" autocapitalize="off" autocomplete="username" spellcheck="false" placeholder="p.nomXX">
+        </label>
+        <label class="field">ÉduConnect password
+          <input id="eprimo-password" type="password" autocomplete="off">
+        </label>
+        <div class="actions"><button class="primary" id="eprimo-go">Sign in</button></div>
+      </form>
+      <p class="muted" style="font-size:13px;margin:10px 0 0">The school blog is read as you. The password is used for this one sign-in and kept nowhere; what is kept is the e-Primo session it gives.</p>
+    </section>
+
     <section class="wide">
       <h2>Feeds <span class="spacer"></span><button class="small" id="feeds-refresh">Refresh</button></h2>
       <div class="table-wrap">
@@ -474,6 +489,31 @@ async function removeLink(feed, link) {
 }
 document.querySelectorAll("[data-list-add]").forEach(b => b.addEventListener("click", () => addLinks(b.dataset.listAdd === "run")));
 
+function showEprimo(e) {
+  $("eprimo-section").classList.toggle("hidden", !e.wanted);
+  if (!e.wanted) return;
+  const line = !e.signed_in ? `<span class="bad">Not signed in: the blog cannot be read.</span>`
+    : e.accepted ? `<span class="ok">Signed in</span> since ${esc(when(e.signed_in))}.`
+    : `<span class="bad">e-Primo has ended the session of ${esc(when(e.signed_in))}.</span> Sign in again.`;
+  $("eprimo-line").innerHTML = line + (e.stored_login ? ` <span class="muted">A stored login signs in again by itself.</span>` : "");
+}
+async function loadEprimo() {
+  try { showEprimo(await api("api/eprimo")); } catch (e) { /* no box is better than a broken one */ }
+}
+$("eprimo-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const username = $("eprimo-user").value.trim(), password = $("eprimo-password").value;
+  if (!username || !password) { $("eprimo-line").innerHTML = `<span class="bad">An identifier and a password are both needed.</span>`; return; }
+  $("eprimo-go").disabled = true;
+  $("eprimo-line").innerHTML = `<span class="warn">Signing in…</span>`;
+  try {
+    showEprimo(await api("api/eprimo/login", {method: "POST", body: {username, password}}));
+    $("eprimo-password").value = "";
+    loadActivity();
+  } catch (e) { $("eprimo-line").innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+  $("eprimo-go").disabled = false;
+});
+
 function setRunning(on) { document.querySelectorAll("[data-run], [data-feed], [data-again]").forEach(b => b.disabled = on); }
 
 async function start(path, body) {
@@ -498,7 +538,7 @@ async function watchJob(id) {
     await new Promise(r => setTimeout(r, 1500));
   }
   watching = null; setRunning(false);
-  loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog(); loadEpisodes();
+  loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog(); loadEpisodes(); loadEprimo();
 }
 
 document.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click", () =>
@@ -506,7 +546,7 @@ document.querySelectorAll("[data-run]").forEach(b => b.addEventListener("click",
 $("feeds-refresh").addEventListener("click", loadFeeds);
 $("log-refresh").addEventListener("click", loadLog);
 
-loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog(); loadConfig();
+loadStatus(); loadFeeds(); loadRecent(); loadActivity(); loadLog(); loadConfig(); loadEprimo();
 setInterval(() => { loadStatus(); loadActivity(); }, 10000);
 </script>
 </body>

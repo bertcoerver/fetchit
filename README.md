@@ -4,7 +4,7 @@ Download feeds into a media library that other tools can read.
 
 fetchit reads the feeds named in a config file (RSS and podcast feeds, ARTE
 collections, NPO Start series, YouTube channels, Bayam and Les Mini Mondes
-magazine links) and
+magazine links, a school's blog on e-Primo) and
 downloads what is new into one folder, laid out the way a media server expects:
 
 ```
@@ -57,6 +57,7 @@ fetchit prune                          # delete what has outlived its keep_days 
 fetchit forget "The Daily Show"        # list a feed's episodes, with their ids
 fetchit forget "The Daily Show" "Ep 4" # delete an episode so the next run fetches it again
 fetchit doctor                         # check ffmpeg, yt-dlp, the config and the library
+fetchit eprimo-login                   # sign in to e-Primo, for a school blog (asks for the password)
 ```
 
 A run reads every feed at once, then downloads each feed's new items one at a
@@ -171,7 +172,8 @@ Decided per item, with nothing to configure:
 - **video** — an item that links to an ARTE programme, an NPO Start episode or a
   YouTube video, or carries a video enclosure. Filed under `shows/`.
 - **text** — anything else. Filed under `articles/` as a record only, so a blog can
-  still be sent on by rssignal.
+  still be sent on by rssignal. A post from an [e-Primo blog](#e-primo) has its
+  photos filed beside its record.
 
 A feed that mixes them gets a folder of each kind.
 
@@ -283,6 +285,46 @@ so an episode is dated by the month its mp3 was uploaded.
 Each episode's picture is the illustration on its story's page. The feed's
 artwork is the magazine's compass logo, the same whichever issues it reads.
 
+### e-Primo
+
+A school's blog on e-Primo (`ent.e-primo.fr`, the Nantes académie's platform for
+primary schools), which only its families can read:
+
+```json
+{"name": "Blog Les Acanthes",
+ "url": "https://ent.e-primo.fr/blog/id/86566c46-40f9-4aed-a7a4-af2c3bdd84ea"}
+```
+
+A post's own link works as the `url` too. Each post is a text item with a
+**body**: its headings, paragraphs and photos (and the odd video) in the order
+they were written, the photos downloaded beside its record. rssignal sends that
+as the post reads. A school usually starts a new blog every year, so the `url`
+changes with it.
+
+**Signing in.** Parents sign in to e-Primo through ÉduConnect, so fetchit has to
+as well, as you:
+
+```bash
+fetchit eprimo-login             # asks for the ÉduConnect identifier and password
+fetchit eprimo-login --status    # is there a session, and does e-Primo still accept it?
+fetchit eprimo-login --forget
+```
+
+`fetchit serve` has the same sign-in as a box on its page, shown when a feed is an
+e-Primo blog. The password is used for that one sign-in and kept nowhere. What is
+kept is the e-Primo session it gives, in a file only you can read
+(`$FETCHIT_EPRIMO_SESSION`, by default beside the cache): enough to read the blog
+until e-Primo ends the session, and no use for ÉduConnect itself.
+
+When e-Primo ends the session, the feed stops with `Sign in again` — in the run's
+output, the log and the box — and carries on from the same post once you have. To
+never be asked, set `FETCHIT_EDUCONNECT_USER` and `FETCHIT_EDUCONNECT_PASSWORD`:
+fetchit then signs in again by itself, at the price of the password sitting in the
+environment of whatever runs it.
+
+Only an account that signs in with an ÉduConnect identifier and password works;
+one that goes through FranceConnect does not.
+
 ## Quality
 
 Every video source offers several renditions. Which one is right depends on where
@@ -316,6 +358,12 @@ The layout is the contract between fetchit and whatever reads it.
   `episode` for a video, `number` where the source numbers its episodes, `duration`
   in seconds, `author`, `categories`, `fetched`, and `fields` — every field the
   source gave, as the strings a filter sees.
+- **A post with pictures in it has a `body`**: the item as it was written, a list of
+  `{"type": "heading" | "text", "text": …}` and `{"type": "image" | "video" |
+  "audio", "file": …}` in order, each `file` a name beside the record
+  (`<name>-1.jpg`, `<name>-2.jpg`, …). `description` still holds all of its text and
+  `image` names its first picture, for a reader that knows nothing of bodies. Only
+  an e-Primo blog writes one today.
 - **`feed.json`** in each feed folder: `format`, `name`, `title`, `description`,
   `url`, `link`, `author`, `language`, `explicit`, and `image`, the file name of its
   artwork.

@@ -376,3 +376,49 @@ def test_fetch_again_needs_a_feed_and_episodes(running, body):
     base, _ = start()
     status, reply = _call(base, "/api/forget", body)
     assert status == 422 and reply["error"]
+
+
+# --- the e-Primo box ---------------------------------------------------------
+
+
+def test_the_e_primo_box_is_only_for_a_config_with_a_blog(running, tmp_path, monkeypatch):
+    from fetchit import eprimo
+
+    monkeypatch.setenv(eprimo.SESSION_ENV, str(tmp_path / "eprimo-session.json"))
+    start, _library = running
+    base, _service = start()
+    assert _call(base, "/api/eprimo") == (200, {"wanted": False, "signed_in": None, "accepted": False, "stored_login": False})
+
+    config = json.loads((tmp_path / "fetchit.json").read_text())
+    config["feeds"].append({"name": "School", "url": "https://ent.e-primo.fr/blog/id/86566c46-40f9-4aed-a7a4-af2c3bdd84ea"})
+    (tmp_path / "fetchit.json").write_text(json.dumps(config))
+    status, box = _call(base, "/api/eprimo")
+    assert (status, box["wanted"], box["signed_in"]) == (200, True, None)
+
+
+def test_signing_in_from_the_panel_keeps_no_password(running, tmp_path, monkeypatch):
+    from fetchit import eprimo
+
+    monkeypatch.setenv(eprimo.SESSION_ENV, str(tmp_path / "eprimo-session.json"))
+    seen = []
+
+    def fake_sign_in(username, password):
+        if password != "s3cret":
+            raise eprimo.EprimoError("ÉduConnect did not accept the identifier and password.")
+        seen.append(username)
+        (tmp_path / "eprimo-session.json").write_text(
+            json.dumps({"cookies": {"oneSessionId": "abc"}, "signed_in": "2026-11-25T15:16:00+00:00"})
+        )
+
+    monkeypatch.setattr(eprimo, "sign_in", fake_sign_in)
+    monkeypatch.setattr(eprimo, "check", lambda: True)
+    start, _library = running
+    base, service = start()
+
+    status, refused = _call(base, "/api/eprimo/login", {"username": "p.nom12", "password": "wrong"})
+    assert status == 422 and "did not accept" in refused["error"]
+    assert _call(base, "/api/eprimo/login", {"username": "p.nom12"})[0] == 422
+
+    status, box = _call(base, "/api/eprimo/login", {"username": "p.nom12", "password": "s3cret"})
+    assert (status, box["signed_in"], seen) == (200, "2026-11-25T15:16:00+00:00", ["p.nom12"])
+    assert "s3cret" not in json.dumps(list(service.activity))

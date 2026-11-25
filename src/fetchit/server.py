@@ -391,6 +391,38 @@ class Service:
             info["disk"] = None
         return info
 
+    def eprimo(self, *, ask: bool = True) -> dict:
+        """Where the e-Primo sign-in stands, for the panel's box.
+
+        ``wanted`` is whether any feed is an e-Primo blog — without one there
+        is no box. ``ask`` puts the kept session to e-Primo, which is the only
+        way to know it is still accepted.
+        """
+        from . import eprimo
+
+        try:
+            wanted = any(eprimo.is_eprimo_link(url) for cfg in self.config().feeds for url in cfg.sources)
+        except FeedError:
+            wanted = False
+        since = eprimo.signed_in_since()
+        return {
+            "wanted": wanted,
+            "signed_in": since,
+            "accepted": bool(since) and wanted and ask and eprimo.check(),
+            "stored_login": eprimo.has_stored_login(),
+        }
+
+    def eprimo_login(self, username, password) -> dict:
+        """Sign in to e-Primo with what the panel's box was given. Neither is kept."""
+        from . import eprimo
+
+        if not isinstance(username, str) or not isinstance(password, str):
+            raise ValueError("An identifier and a password are both needed.")
+        eprimo.sign_in(username, password)
+        self.activity.appendleft({"when": _iso(time.time()), "kind": "e-Primo", "text": "signed in", "ok": True})
+        log_line("e-Primo: signed in")
+        return self.eprimo()
+
     def feeds(self) -> list[dict]:
         config = self.config()
         state = State.load(config.library)
@@ -843,6 +875,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, {"log": svc.log_tail()})
             elif path == "/api/config":
                 self._json(HTTPStatus.OK, svc.config_view())
+            elif path == "/api/eprimo":
+                self._json(HTTPStatus.OK, svc.eprimo())
             elif path.startswith("/api/jobs/"):
                 job = svc.jobs.get(path.rsplit("/", 1)[-1])
                 if job is None:
@@ -872,6 +906,11 @@ class Handler(BaseHTTPRequestHandler):
             except Busy as exc:
                 self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
             except ValueError as exc:
+                self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
+        elif path == "/api/eprimo/login":
+            try:
+                self._json(HTTPStatus.OK, svc.eprimo_login(body.get("username"), body.get("password")))
+            except (FeedError, ValueError) as exc:
                 self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(exc)})
         elif path in ("/api/links", "/api/links/remove"):
             edit = svc.remove_links if path.endswith("/remove") else svc.add_links

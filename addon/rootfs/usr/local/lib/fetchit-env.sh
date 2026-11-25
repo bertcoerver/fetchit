@@ -37,6 +37,10 @@ FETCHIT_NOTIFY="$(jq -r '(.notify // []) | join(",")' /data/options.json)"
 FETCHIT_NOTIFY_TOKEN="$(jq -r '.notify_token // ""' /data/options.json)"
 export FETCHIT_NOTIFY FETCHIT_NOTIFY_TOKEN
 
+# The e-Primo session, for a school blog behind ÉduConnect: made by signing in
+# from the panel, and kept on the add-on's own volume, not beside the config.
+export FETCHIT_EPRIMO_SESSION="/data/eprimo-session.json"
+
 # A cookies.txt beside fetchit.json, for when YouTube asks to "confirm you're
 # not a bot". Off unless the file is there.
 if [ -f /config/youtube-cookies.txt ]; then

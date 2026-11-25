@@ -70,6 +70,14 @@ anything else is refused, with the offending links named. Links are added to tha
 links in `lists/<name>.txt` beside `fetchit.json` — the config gains the feed,
 with the same check and `.bak` as below.
 
+**e-Primo** appears when a feed is a school's blog on e-Primo
+(`https://ent.e-primo.fr/blog/id/…`), which is read as you. Give it your
+ÉduConnect identifier and password and **Sign in**: the password is used for
+that one sign-in and kept nowhere, and the e-Primo session it gives is kept on
+the add-on's own volume. The box says whether e-Primo still accepts the session.
+When it no longer does, the blog's feed stops — its run says `Sign in again` —
+until you sign in here once more; nothing is skipped in between.
+
 At the bottom is `fetchit.json` itself, to edit. **Save** (or ⌘S / Ctrl+S)
 checks it the way a run reads it and refuses one that a run would refuse, saying
 what is wrong; a saved file keeps the previous one beside it as
@@ -136,6 +144,7 @@ series, seasons and synopses.
 | `/media/fetchit/` | `/media/fetchit/` | the library |
 | `/media/fetchit/.fetchit/state.json` | | what each feed is done with |
 | `/data/cache.json`, `/data/fetchit.log` | add-on volume | speed cache; the log of every run |
+| `/data/eprimo-session.json` | add-on volume | the e-Primo session, if you signed in; never the password |
 
 `state.json` is what stops a feed starting over: keep it with the library. The cache
 can be deleted at the cost of one slow run.

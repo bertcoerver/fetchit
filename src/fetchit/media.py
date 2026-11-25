@@ -10,8 +10,9 @@ nothing to configure:
     It links to a video fetchit knows how to get (an ARTE programme, a YouTube
     video, an NPO Start episode), or carries a video enclosure of its own.
 ``text``
-    Anything else: an article, a written note. Nothing to download; the item's
-    record is the whole of it.
+    Anything else: an article, a written note. Nothing to play; the item's
+    record is the whole of it — except a post from a blog behind a sign-in
+    (:mod:`fetchit.eprimo`), whose photos are filed beside its record.
 
 Some feeds are about video but carry none: the item links to a player page and
 the video itself lives behind a streaming manifest or a format catalogue.
@@ -229,6 +230,7 @@ def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:
     """
     from .arte import arte_collection_id, parse_arte_collection
     from .bayam import is_bayam_link, parse_bayam
+    from .eprimo import is_eprimo_link, parse_eprimo
     from .minimondes import is_minimondes_link, parse_minimondes
     from .npo import npo_series, parse_npo_series
 
@@ -240,7 +242,36 @@ def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:
         return parse_bayam(cfg)
     if is_minimondes_link(cfg.url):
         return parse_minimondes(cfg)
+    if is_eprimo_link(cfg.url):
+        return parse_eprimo(cfg)
     return None
+
+
+def fetch_body(item: FeedItem, into: str) -> list[dict]:
+    """Download the files of ``item``'s body into ``into``, for filing with it.
+
+    The body comes back with each file block's ``url`` replaced by the ``path``
+    it was downloaded to; empty for an item that has no body. Raises
+    :class:`~fetchit.feeds.FeedError` if a file can't be had right now.
+    """
+    from . import eprimo
+
+    if not item.body:
+        return []
+    if eprimo.is_eprimo_item(item):
+        return eprimo.fetch_body(item, into)
+    # No other source writes a body with files in it, so there is nothing to fetch.
+    return [dict(block) for block in item.body if "url" not in block]
+
+
+def request_headers(url: str | None) -> dict[str, str]:
+    """What a download of ``url`` must be asked with, for a source behind a sign-in.
+
+    Empty for everything that anyone may download, which is nearly everything.
+    """
+    from .eprimo import auth_headers, is_eprimo_file
+
+    return auth_headers(url) if is_eprimo_file(url) else {}
 
 
 def link_source(url: str | None) -> str | None:
@@ -330,6 +361,7 @@ def source_image(url: str) -> str | None:
     """
     from .arte import arte_collection_id, collection_image
     from .bayam import is_bayam_link, magazine_image
+    from .eprimo import blog_image, is_eprimo_link
     from .minimondes import is_minimondes_link, magazine_logo
     from .npo import npo_series, series_image
     from .youtube import channel_image
@@ -342,6 +374,8 @@ def source_image(url: str) -> str | None:
         return magazine_image(url)
     if is_minimondes_link(url):
         return magazine_logo(url)
+    if is_eprimo_link(url):
+        return blog_image(url)
     return channel_image(url)
 
 

@@ -32,6 +32,7 @@ def error_log(tmp_path, monkeypatch):
 def fresh_dotenv(monkeypatch):
     """Don't let one test's ``.env``, or the developer's environment, leak in."""
     for name in ("FETCHIT_LIBRARY", "FETCHIT_CONFIG", "FETCHIT_KEEP_DAYS", "FETCHIT_SCHEDULE", "FETCHIT_YOUTUBE_COOKIES",
+                 "FETCHIT_EPRIMO_SESSION", "FETCHIT_EDUCONNECT_USER", "FETCHIT_EDUCONNECT_PASSWORD",
                  "FETCHIT_YOUTUBE_COOKIES_FROM_BROWSER",
                  "FETCHIT_YOUTUBE_COOKIES_ADVICE"):
         monkeypatch.delenv(name, raising=False)
