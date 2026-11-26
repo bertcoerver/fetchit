@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- Save a link for later from a phone's share sheet
+
 ## 0.3.0
 
 - Save single videos for later, in a link list of their own
