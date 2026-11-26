@@ -65,6 +65,7 @@ def sources(monkeypatch):
     ("https://www.arte.tv/fr/videos/RC-023176/le-dessous-des-images/", None),
     ("https://npo.nl/start/serie/het-klokhuis/afleveringen", None),
     ("https://example.com/watch?v=dQw4w9WgXcQ", None),
+    ("https://invidious.nerdvpn.de/watch?v=dQw4w9WgXcQ", None),
     ("", None),
 ])
 def test_the_link_of_one_item_is_told_from_the_address(url, source):
@@ -81,6 +82,10 @@ def test_a_link_list_takes_the_link_of_one_item_too():
     ("https://youtu.be/dQw4w9WgXcQ?si=abc&t=42", VIDEO),
     ("https://m.youtube.com/watch?feature=share&v=dQw4w9WgXcQ&list=PL1", VIDEO),
     ("https://npo.nl/start/serie/het-klokhuis/seizoen-2026/hijskraan_1/afspelen", EPISODE),
+    ("https://invidious.nerdvpn.de/watch?v=dQw4w9WgXcQ", VIDEO),
+    ("https://yewtu.be/watch?v=dQw4w9WgXcQ&t=42&listen=1", VIDEO),
+    ("https://invidious.nerdvpn.de/watch?v=tooshort", "https://invidious.nerdvpn.de/watch?v=tooshort"),
+    ("https://invidious.nerdvpn.de/channel/UCabc", "https://invidious.nerdvpn.de/channel/UCabc"),
     (PROGRAMME, PROGRAMME),
     ("https://www.youtube.com/@channel", "https://www.youtube.com/@channel"),
 ])

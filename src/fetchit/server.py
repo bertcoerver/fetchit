@@ -621,8 +621,9 @@ class Service:
         wanted = _clean_links(links)
         if not wanted:
             raise ConfigError("No links to add.")
-        _check_readable(wanted)
+        # Written the plain way first: an Invidious link is YouTube's by then.
         wanted = _as_saved(wanted)
+        _check_readable(wanted)
 
         data, feeds, view = self._config_data()
         at = _feed_at(feeds, name)

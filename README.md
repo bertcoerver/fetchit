@@ -274,6 +274,10 @@ a link there and it is downloaded; the feed and its file are made with the first
 one. The name is only the panel's — any link list takes such links, and they can
 sit beside a channel or a series in the same list.
 
+A YouTube video's link on an Invidious front end
+(`https://<instance>/watch?v=…`), pasted or shared, is saved as the YouTube
+link of that video. A link typed into the file by hand is not rewritten.
+
 A saved video differs from the same video read off its channel in a few ways:
 
 - **It is dated when it was saved**, not when it went up: a 2019 documentary

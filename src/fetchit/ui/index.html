@@ -460,7 +460,9 @@ const LINK_SOURCES = [
   ["YouTube", u => (/^((www|m|music)\.)?youtube\.com$/.test(u.hostname) &&
                     (/^\/(shorts|embed|live|v)\/[\w-]{11}/.test(u.pathname) ||
                      (u.pathname === "/watch" && /^[\w-]{11}/.test(u.searchParams.get("v") || "")))) ||
-                   (u.hostname === "youtu.be" && /^\/[\w-]{11}/.test(u.pathname))],
+                   (u.hostname === "youtu.be" && /^\/[\w-]{11}/.test(u.pathname)) ||
+                   // The same video on an Invidious front end — fetchit.youtube.mirrored_video_id.
+                   (/^\/watch\/?$/.test(u.pathname) && /^[\w-]{11}$/.test(u.searchParams.get("v") || ""))],
   ["ARTE", u => /^(www\.)?arte\.tv$/.test(u.hostname) && /^\/[a-z]{2}\/videos\/\d{4,}-\d{3}-[A-Z](\/|$)/i.test(u.pathname)],
   ["NPO Start", u => /^(www\.)?npo\.nl$/.test(u.hostname) &&
                      /^\/start\/(afspelen\/[\w-]+|serie\/[\w-]+\/[\w-]+\/[\w-]+\/afspelen)\/?$/i.test(u.pathname)],

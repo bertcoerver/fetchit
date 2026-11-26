@@ -76,11 +76,15 @@ def canonical(url: str) -> str:
     ``watch?v=…&t=42s&si=…``) and an NPO episode two; saved in their one plain
     form, the same video pasted twice is the same line of the list. Anything
     else comes back as it was.
+
+    A YouTube video linked on an Invidious front end is written as YouTube's
+    own link too (:func:`~fetchit.youtube.mirrored_video_id`): the video is
+    read from YouTube, whichever window it was seen through.
     """
     from .npo import NPO_EPISODE_URL, npo_episode_slug
-    from .youtube import YOUTUBE_WATCH, youtube_video_id
+    from .youtube import YOUTUBE_WATCH, mirrored_video_id, youtube_video_id
 
-    if video_id := youtube_video_id(url):
+    if video_id := youtube_video_id(url) or mirrored_video_id(url):
         return YOUTUBE_WATCH.format(video_id=video_id)
     if slug := npo_episode_slug(url):
         return NPO_EPISODE_URL.format(slug=slug)

@@ -75,7 +75,9 @@ The first tab is always **Saved for later**: paste the link of one video — a
 YouTube video, an ARTE programme, an NPO Start episode — and it is downloaded
 into a feed of that name, made with the first link and kept for good. A saved
 video is dated the moment it was saved rather than the day it went up, so the
-feed reads in the order things were put in it.
+feed reads in the order things were put in it. A YouTube video's link on an
+Invidious front end (`https://<instance>/watch?v=…`) is taken as the YouTube
+video it shows.
 
 To save from a phone's share sheet instead, three things:
 

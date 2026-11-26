@@ -42,7 +42,7 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from . import cache, timing
 from .feeds import FeedError, FeedItem, SourceBlocked
@@ -57,6 +57,8 @@ YOUTUBE_LINK_RE = re.compile(
     r")(?P<video_id>[\w-]{11})",
     re.IGNORECASE,
 )
+
+_VIDEO_ID_RE = re.compile(r"[\w-]{11}")
 
 # A channel, in the four forms YouTube still hands out: the canonical id, the
 # modern @handle, and the two legacy vanity paths.
@@ -257,6 +259,29 @@ def youtube_video_id(link: str | None) -> str | None:
         return None
     match = YOUTUBE_LINK_RE.search(link)
     return match["video_id"] if match else None
+
+
+def mirrored_video_id(link: str | None) -> str | None:
+    """The video id in a link to YouTube's video on somebody else's front end.
+
+    Invidious (and Piped, which copies it) shows YouTube's videos at YouTube's
+    own address under another name: ``https://invidious.example/watch?v=…``.
+    There is no list of those names to check against — anybody runs one — so
+    this goes by the shape alone: a ``/watch`` page whose ``v`` is exactly a
+    video id, on a host that is not YouTube's. A page of that shape that is
+    something else gives an id YouTube doesn't know, and says so when read.
+
+    ``None`` for anything else, YouTube's own links included.
+    """
+    if not link:
+        return None
+    parts = urlparse(link)
+    if parts.scheme not in ("http", "https") or not parts.hostname or is_youtube_url(link):
+        return None
+    if parts.path.rstrip("/") != "/watch":
+        return None
+    video_id = parse_qs(parts.query).get("v", [""])[0]
+    return video_id if _VIDEO_ID_RE.fullmatch(video_id) else None
 
 
 def youtube_feed_url(url: str | None) -> str | None:

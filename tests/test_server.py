@@ -487,6 +487,9 @@ def test_a_shortcut_saves_links_with_the_token_and_nothing_else(running, tmp_pat
 
     status, answer = _save(base, {"links": [video]}, token="s3cret")
     assert status == 200 and answer["message"] == "1 link already saved."
+    # Seen on an Invidious front end, it is the same YouTube video.
+    status, answer = _save(base, {"links": "https://invidious.nerdvpn.de/watch?v=dQw4w9WgXcQ"}, token="s3cret")
+    assert status == 200 and answer["message"] == "1 link already saved."
     assert _save(base, {"links": "nothing here"}, token="s3cret")[0] == 422
 
 
