@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Keep a second, smaller copy of a video where a feed asks for one
+
 ## 0.4.5
 
 - Delete a saved video's files when its link is removed
