@@ -522,6 +522,19 @@ def test_a_link_taken_out_and_put_back_is_fetched_again(running, tmp_path):
         state.mark("Saved for later", f"npo:{slug}")
     state.save()
     cache.put("saved_item", episode, {"title": "Intocht"})
+    # Both are in the library; only the one taken out leaves it.
+    from fetchit.feeds import FeedItem, ParsedFeed
+    from fetchit.library import records, write_item
+
+    cfg = next(f for f in service.config().feeds if f.name == "Saved for later")
+    for slug in ("intocht-sinterklaas-2026", "hijskraan_1"):
+        media = tmp_path / f"{slug}.mp4"
+        media.write_bytes(b"video")
+        item = FeedItem(title=slug, description="", link=f"https://npo.nl/start/afspelen/{slug}",
+                        published=datetime(2026, 11, 26, tzinfo=timezone.utc))
+        write_item(str(library), cfg, ParsedFeed(items=[item]), item, "video",
+                   item_id=f"npo:{slug}", media=str(media))
+    assert len(records(str(library), "Saved for later")) == 2
 
     status, answer = _call(base, "/api/links/remove", {"feed": "Saved for later", "links": [episode]})
     assert status == 200 and answer["removed"] == [episode]
@@ -530,3 +543,7 @@ def test_a_link_taken_out_and_put_back_is_fetched_again(running, tmp_path):
     assert not state.seen("Saved for later", "npo:intocht-sinterklaas-2026")
     assert state.seen("Saved for later", "npo:hijskraan_1")
     assert cache.get("saved_item", episode) is None
+    left = records(str(library), "Saved for later")
+    assert [r["id"] for r in left] == ["npo:hijskraan_1"]
+    videos = [p.name for p in library.rglob("*.mp4")]
+    assert len(videos) == 1

@@ -46,7 +46,7 @@ from . import __version__
 from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
 from .feeds import FeedError, parse_links
-from .library import KIND_DIRS, feed_folders, prune, records
+from .library import KIND_DIRS, feed_folders, prune, records, remove_items
 from .run import AlreadyRunning, episodes, forget, run, single_run
 from .state import State
 
@@ -685,14 +685,14 @@ class Service:
 
         Only a feed with a ``urls_file`` has a list to take them from, and it
         keeps at least one: a feed with none is not one a run can read — remove
-        the feed itself in the editor. What was downloaded from a link stays in
-        the library until it is pruned.
+        the feed itself in the editor.
 
-        A link that is one video is also forgotten: the feed no longer counts
-        it as done, so adding it again fetches it again. Without that, a link
-        taken out because its download was bad could never be had properly —
-        put back, it was still "fetched", and the run that followed found
-        nothing to do. Which is why this waits for a run that is going: that
+        A link that is one video is taken out whole: its files leave the
+        library and the feed no longer counts it as done, so adding it again
+        fetches it again. Without that, a link taken out because its download
+        was bad could never be had properly — put back, it was still
+        "fetched", and the run that followed found nothing to do. Which is why
+        this waits for a run that is going: that
         run would write its own state over the forgetting.
         """
         name = name.strip() if isinstance(name, str) else ""
@@ -720,7 +720,7 @@ class Service:
         return {"feed": name, "removed": removed}
 
     def _forget_saved(self, name: str, links: list[str]) -> None:
-        """Let feed ``name`` fetch the single videos among ``links`` again."""
+        """Delete the single videos among ``links`` from feed ``name``, to be fetched again if asked."""
         from . import saved
 
         ids = {link: saved.item_id(link) for link in links}
@@ -729,6 +729,7 @@ class Service:
         library = self.config().library
         try:
             with single_run(library):
+                remove_items(library, name, {item for item in ids.values() if item})
                 state = State.load(library)
                 for link, item in ids.items():
                     if item:

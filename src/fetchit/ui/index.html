@@ -508,7 +508,7 @@ async function addLinks(thenRun) {
 }
 
 async function removeLink(feed, link) {
-  if (!confirm(`Remove this link from ${feed}?\n\n${link}\n\nWhat was downloaded from it stays until it is pruned.`)) return;
+  if (!confirm(`Remove this link from ${feed}?\n\n${link}\n\nIf it is one video, its files are deleted too. What a channel or a series downloaded stays until it is pruned.`)) return;
   try {
     await api("api/links/remove", {method: "POST", body: {feed, links: [link]}});
     listLine("Removed.", "ok");
