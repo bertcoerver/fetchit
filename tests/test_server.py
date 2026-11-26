@@ -498,3 +498,35 @@ def test_saving_is_off_without_a_token(running):
     base, _ = start(gui_from="10.9.9.9")
     status, answer = _save(base, {"links": "https://youtu.be/dQw4w9WgXcQ"}, token="")
     assert status == 403 and "no save token" in answer["error"]
+
+
+def test_a_link_taken_out_and_put_back_is_fetched_again(running, tmp_path):
+    # Taken out because its download was bad, a link put back was still
+    # "fetched": the run that followed finished in a second with nothing.
+    from fetchit import cache
+    from fetchit.state import State
+
+    start, library = running
+    base, service = start()
+    episode = "https://npo.nl/start/afspelen/intocht-sinterklaas-2026"
+    other = "https://npo.nl/start/afspelen/hijskraan_1"
+    status, answer = _call(base, "/api/links", {"feed": "Saved for later", "links": [episode, other]})
+    assert status == 200, answer
+    for _ in range(200):
+        if service.current() is None:
+            break
+        time.sleep(0.02)
+
+    state = State.load(str(library))
+    for slug in ("intocht-sinterklaas-2026", "hijskraan_1"):
+        state.mark("Saved for later", f"npo:{slug}")
+    state.save()
+    cache.put("saved_item", episode, {"title": "Intocht"})
+
+    status, answer = _call(base, "/api/links/remove", {"feed": "Saved for later", "links": [episode]})
+    assert status == 200 and answer["removed"] == [episode]
+
+    state = State.load(str(library))
+    assert not state.seen("Saved for later", "npo:intocht-sinterklaas-2026")
+    assert state.seen("Saved for later", "npo:hijskraan_1")
+    assert cache.get("saved_item", episode) is None

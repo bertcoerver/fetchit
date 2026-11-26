@@ -47,7 +47,7 @@ from .config import Config, ConfigError, config_path, load_config
 from .errorlog import log_exception, log_line, log_path
 from .feeds import FeedError, parse_links
 from .library import KIND_DIRS, feed_folders, prune, records
-from .run import AlreadyRunning, episodes, forget, run
+from .run import AlreadyRunning, episodes, forget, run, single_run
 from .state import State
 
 DEFAULT_HOST = "127.0.0.1"
@@ -687,6 +687,13 @@ class Service:
         keeps at least one: a feed with none is not one a run can read — remove
         the feed itself in the editor. What was downloaded from a link stays in
         the library until it is pruned.
+
+        A link that is one video is also forgotten: the feed no longer counts
+        it as done, so adding it again fetches it again. Without that, a link
+        taken out because its download was bad could never be had properly —
+        put back, it was still "fetched", and the run that followed found
+        nothing to do. Which is why this waits for a run that is going: that
+        run would write its own state over the forgetting.
         """
         name = name.strip() if isinstance(name, str) else ""
         unwanted = _clean_links(links)
@@ -707,9 +714,29 @@ class Service:
                 )
             removed = [link for link in have if link in unwanted]
             if removed:
+                self._forget_saved(name, removed)
                 _write_links(path, kept)
         self._links_changed(name, f"{len(removed)} link(s) removed.", removed)
         return {"feed": name, "removed": removed}
+
+    def _forget_saved(self, name: str, links: list[str]) -> None:
+        """Let feed ``name`` fetch the single videos among ``links`` again."""
+        from . import saved
+
+        ids = {link: saved.item_id(link) for link in links}
+        if not any(ids.values()):
+            return
+        library = self.config().library
+        try:
+            with single_run(library):
+                state = State.load(library)
+                for link, item in ids.items():
+                    if item:
+                        state.forget(name, item)
+                        saved.forget(link)
+                state.save()
+        except AlreadyRunning as exc:
+            raise ConfigError("A run is going; remove the link when it is done.") from exc
 
     def save(self, links, feed: str | None = None) -> dict:
         """Save the single videos among ``links`` for later, and fetch them now.

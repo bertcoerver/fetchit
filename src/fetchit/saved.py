@@ -91,6 +91,26 @@ def canonical(url: str) -> str:
     return url
 
 
+def item_id(url: str) -> str | None:
+    """What the state calls the one item behind ``url``, or ``None`` if it is not one."""
+    from .media import item_id as id_of
+
+    if not item_source(url):
+        return None
+    return id_of(FeedItem(title="", description="", link=url))
+
+
+def forget(url: str) -> None:
+    """Drop what is remembered of the saved link ``url``.
+
+    For a link taken out of its list. Saved again, it is read again and dated
+    the moment it is: a link put back is put back now, and filed under the date
+    it was first saved it would sit behind what has been sent on since.
+    """
+    cache.put(_ITEM_NS, url, None)
+    cache.save()
+
+
 def parse_item(cfg: FeedConfig) -> ParsedFeed:
     """Read the one item behind ``cfg.url`` as a feed of it.
 
