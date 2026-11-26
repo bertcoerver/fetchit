@@ -670,3 +670,43 @@ def test_collection_image_without_one_raises(monkeypatch):
 
     with pytest.raises(FeedError, match="no image"):
         arte.collection_image(COLLECTION_URL)
+
+
+# --- one programme, by its own link ---------------------------------------
+
+PROGRAMME_CONFIG = json.dumps({"data": {"attributes": {
+    "metadata": {
+        "providerId": "127395-115-A",
+        "title": "Le dessous des images",
+        "subtitle": "Le tsunami des affiches IA",
+        "description": "<p>Cela n\u2019aura \u00e9chapp\u00e9 \u00e0 personne.</p>",
+        "images": [{"url": "https://api-cdn.arte.tv/img/v2/image/abc/940x530", "caption": "X"}],
+        "link": {"url": "https://www.arte.tv/fr/videos/127395-115-A/le-dessous-des-images/"},
+        "duration": {"seconds": 636},
+    },
+    "rights": {"begin": "2026-11-26T04:00:00+00:00", "end": "2031-10-31T04:00:00+00:00"},
+}}})
+
+
+def test_a_programme_is_read_from_its_own_player_config(monkeypatch):
+    seen = _patch_fetch(monkeypatch, config=PROGRAMME_CONFIG)
+
+    item = arte.program_item("https://www.arte.tv/fr/videos/127395-115-A/", feed_name="Saved")
+
+    assert seen == ["https://api.arte.tv/api/player/v2/config/fr/127395-115-A"]
+    assert item.title == "Le tsunami des affiches IA"
+    assert item.description == "Cela n\u2019aura \u00e9chapp\u00e9 \u00e0 personne."
+    assert item.link == "https://www.arte.tv/fr/videos/127395-115-A/le-dessous-des-images/"
+    assert item.published == datetime(2026, 11, 26, 4, 0, tzinfo=timezone.utc)
+    assert item.image_url == "https://api-cdn.arte.tv/img/v2/image/abc/940x530"
+    assert item.feed_name == "Saved"
+    assert item.extra == {"program_id": "127395-115-A", "show_title": "Le dessous des images",
+                          "duration_seconds": "636"}
+
+
+def test_a_programme_arte_says_nothing_about_is_not_an_item(monkeypatch):
+    _patch_fetch(monkeypatch, config=json.dumps({"data": {"attributes": {"error": {"code": "X"}}}}))
+    with pytest.raises(FeedError, match="says nothing about 127395-115-A"):
+        arte.program_item("https://www.arte.tv/fr/videos/127395-115-A/")
+    with pytest.raises(FeedError, match="Not an ARTE video link"):
+        arte.program_item("https://www.arte.tv/fr/videos/RC-023176/le-dessous-des-images/")

@@ -254,6 +254,28 @@ def test_the_panel_makes_a_link_list_and_adds_to_it(running, tmp_path):
     assert links.read_text() == f"# September\n{one}\n{three}\n"
 
 
+def test_saved_for_later_is_a_link_list_of_single_videos(running, tmp_path):
+    start, _ = running
+    base, _ = start()
+    video = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    episode = "https://npo.nl/start/afspelen/hijskraan_1"
+    programme = "https://www.arte.tv/fr/videos/127395-115-A/le-dessous-des-images/"
+
+    # However it was pasted, a video is saved the one plain way, and once.
+    status, answer = _call(base, "/api/links", {"feed": "Saved for later", "links": [
+        "https://youtu.be/dQw4w9WgXcQ?si=abc", video + "&t=42s", episode]})
+    assert status == 200, answer
+    assert answer == {"feed": "Saved for later", "added": [video, episode], "already": 0, "created": True,
+                      "file": "lists/saved-for-later.txt"}
+    assert json.loads((tmp_path / "fetchit.json").read_text())["feeds"][-1] == {
+        "name": "Saved for later", "urls_file": "lists/saved-for-later.txt", "keep_days": 0}
+
+    status, answer = _call(base, "/api/links", {"feed": "Saved for later", "links": [
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ", programme]})
+    assert status == 200 and answer["added"] == [programme] and answer["already"] == 1
+    assert (tmp_path / "lists" / "saved-for-later.txt").read_text() == f"{video}\n{episode}\n{programme}\n"
+
+
 def test_two_link_lists_are_two_feeds(running, tmp_path):
     start, _ = running
     base, _ = start()

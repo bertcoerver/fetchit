@@ -596,6 +596,10 @@ class Service:
         and a story pruned after a month does not come back. Links the list
         already has are left alone.
 
+        A link may be a whole source or one video of it — which is all a
+        "Saved for later" feed is: a link list of single videos, see
+        :mod:`fetchit.saved`.
+
         Changes to the config go through :meth:`save_config`, so they are
         checked and backed up like any other edit.
         """
@@ -606,6 +610,7 @@ class Service:
         if not wanted:
             raise ConfigError("No links to add.")
         _check_readable(wanted)
+        wanted = _as_saved(wanted)
 
         data, feeds, view = self._config_data()
         at = _feed_at(feeds, name)
@@ -731,10 +736,22 @@ def _check_readable(links: list[str]) -> None:
     if refused:
         raise ConfigError(
             "Not a link fetchit can read: " + ", ".join(refused) + ". A link list takes "
+            "the link of one video (YouTube, ARTE, NPO Start) or of a whole source: "
             "Bayam and Les Mini Mondes magazine links, ARTE collections, "
             "NPO Start series and YouTube channels; an RSS feed goes in the "
             "configuration as a feed of its own."
         )
+
+
+def _as_saved(links: list[str]) -> list[str]:
+    """``links`` with each single video's written the one plain way, each once.
+
+    See :func:`~fetchit.saved.canonical`: the same video pasted from the
+    address bar and from a share sheet is the same line of the list.
+    """
+    from .saved import canonical
+
+    return list(dict.fromkeys(canonical(link) for link in links))
 
 
 def _feed_at(feeds: list, name: str) -> int | None:

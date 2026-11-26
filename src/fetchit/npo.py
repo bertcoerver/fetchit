@@ -125,6 +125,8 @@ def npo_episode_slug(link: str | None) -> str | None:
 
 def parse_npo_series(cfg: FeedConfig) -> ParsedFeed:
     """Read an NPO Start series (or one season of it) as if it were a feed."""
+    if not npo_series(cfg.url):
+        raise FeedError(f"Not an NPO Start series url: {cfg.url!r}")
     queries = _queries(cfg.url)
     series = _series(queries, cfg.url)
     programs = _programs(queries, cfg.url)
@@ -146,8 +148,30 @@ def parse_npo_series(cfg: FeedConfig) -> ParsedFeed:
     )
 
 
+def episode_item(url: str, *, feed_name: str = "") -> FeedItem:
+    """One episode, read from its own player page rather than off its series.
+
+    The page carries the same programme entry a series page lists, so the item
+    is the one that series would have given: its title, synopsis, artwork,
+    length and the moment it was first broadcast. For a link saved on its own —
+    see :mod:`fetchit.saved`.
+    """
+    slug = npo_episode_slug(url)
+    if not slug:
+        raise FeedError(f"Not an NPO Start episode link: {url!r}")
+    page = NPO_EPISODE_URL.format(slug=slug)
+    program = _query(_queries(page, "program:detail-"), "program:detail-")
+    if not isinstance(program, dict):
+        raise FeedError(f"NPO page {page!r} has no episode details")
+    series = program.get("series")
+    show_title = str(series.get("title") or "") if isinstance(series, dict) else ""
+    return _item({**program, "slug": program.get("slug") or slug}, feed_name, show_title)
+
+
 def series_image(url: str) -> str:
     """The series' own artwork, as the page shows it right now."""
+    if not npo_series(url):
+        raise FeedError(f"Not an NPO Start series url: {url!r}")
     image = _image(_series(_queries(url), url))
     if image is None:
         raise FeedError(f"NPO series {url!r} has no image")
@@ -200,12 +224,13 @@ def resolve(item: FeedItem, *, quality: Quality = Quality()) -> NpoPlan:
 # --- reading the page -------------------------------------------------------
 
 
-def _queries(url: str) -> list[dict]:
-    """The page's dehydrated react-query cache: where all the data lives."""
-    found = npo_series(url)
-    if not found:
-        raise FeedError(f"Not an NPO Start series url: {url!r}")
+def _queries(url: str, wanted: str = "series:detail-") -> list[dict]:
+    """The page's dehydrated react-query cache: where all the data lives.
 
+    ``wanted`` is the query the caller came for — the series' for a series
+    page, the programme's for an episode's — which is how the right cache is
+    told from the others a streamed page carries.
+    """
     html = fetch_text(url, headers=PAGE_HEADERS)
     match = _NEXT_DATA_RE.search(html)
     if match:
@@ -218,21 +243,22 @@ def _queries(url: str) -> list[dict]:
             raise FeedError(f"Unexpected NPO page data for {url!r}: {exc}") from exc
         return queries
 
-    queries = _flight_queries(html)
+    queries = _flight_queries(html, wanted)
     if queries is None:
+        what = "series" if wanted.startswith("series:") else "episode"
         raise FeedError(
-            f"NPO page {url!r} carries neither __NEXT_DATA__ nor the series data "
+            f"NPO page {url!r} carries neither __NEXT_DATA__ nor the {what} data "
             "in its streamed page data — NPO has changed its pages again."
         )
     return queries
 
 
-def _flight_queries(html: str) -> list[dict] | None:
+def _flight_queries(html: str, wanted: str = "series:detail-") -> list[dict] | None:
     """The react-query cache out of an App Router page's flight stream.
 
     The stream is the chunks' text put back together. Somewhere in it a client
     component is handed the dehydrated cache, ``{"mutations": [...],
-    "queries": [...]}``, as plain JSON: the list that holds the series' own
+    "queries": [...]}``, as plain JSON: the list that holds the ``wanted``
     query is the one wanted. ``None`` if there is no such list.
     """
     stream = []
@@ -254,7 +280,7 @@ def _flight_queries(html: str) -> list[dict] | None:
         if not isinstance(queries, list):
             continue
         queries = [q for q in queries if isinstance(q, dict)]
-        if _query(queries, "series:detail-") is not None:
+        if _query(queries, wanted) is not None:
             return queries
     return None
 

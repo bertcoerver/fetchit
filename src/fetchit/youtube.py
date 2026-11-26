@@ -799,10 +799,55 @@ def _archive_item(upload: Upload, when: datetime, feed_name: str) -> FeedItem:
     )
 
 
+def video_item(url: str, *, feed_name: str = "") -> FeedItem:
+    """One video, read by its own address rather than off its channel.
+
+    The item its channel's feed would have given, and a little more: yt-dlp's
+    answer has the description and the length too, and the moment it went up to
+    the second. The id is in the shape the Atom feed uses, like
+    :func:`_archive_item`'s. For a link saved on its own — see
+    :mod:`fetchit.saved`.
+    """
+    video_id = youtube_video_id(url)
+    if not video_id:
+        raise FeedError(f"Not a YouTube link: {url!r}")
+    info = _video_info(YOUTUBE_WATCH.format(video_id=video_id))
+
+    published = None
+    try:
+        published = datetime.fromtimestamp(int(info["timestamp"]), timezone.utc)
+    except (KeyError, TypeError, ValueError, OSError, OverflowError):
+        try:
+            published = datetime.strptime(str(info.get("upload_date")), "%Y%m%d").replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            pass
+
+    extra = {"id": f"yt:video:{video_id}"}
+    if info.get("duration"):
+        extra["duration_seconds"] = str(int(float(info["duration"])))
+    channel = str(info.get("channel") or info.get("uploader") or "").strip()
+    if channel:
+        extra["show_title"] = channel
+    return FeedItem(
+        title=str(info.get("title") or video_id).strip(),
+        description=str(info.get("description") or "").strip(),
+        link=YOUTUBE_WATCH.format(video_id=video_id),
+        published=published,
+        image_url=str(info.get("thumbnail") or "") or YOUTUBE_THUMBNAIL.format(video_id=video_id),
+        author=channel or None,
+        feed_name=feed_name,
+        extra=extra,
+    )
+
+
 def resolve(item: FeedItem, *, quality: Quality = Quality()) -> YoutubePlan:
     """Work out which formats ``item``'s video would be fetched at.
 
-    Raises :class:`VideoTooShort` for a Short, and
+    Raises :class:`VideoTooShort` for a Short — unless it was saved on its own
+    (:mod:`fetchit.saved`): a Short somebody pasted the link of is one they
+    want, where one a channel posted between its videos is not — and
     :class:`~fetchit.feeds.FeedError` if the item is not a YouTube video, the
     video can't be read, or nothing fits ``quality``'s size budget.
     """
@@ -814,7 +859,7 @@ def resolve(item: FeedItem, *, quality: Quality = Quality()) -> YoutubePlan:
     info = _video_info(url)
 
     duration = info.get("duration")
-    if duration and float(duration) < MIN_VIDEO_SECONDS:
+    if duration and float(duration) < MIN_VIDEO_SECONDS and "saved" not in item.extra:
         raise VideoTooShort(
             f"{video_id} is {float(duration):.0f}s — a Short, not downloading it"
         )

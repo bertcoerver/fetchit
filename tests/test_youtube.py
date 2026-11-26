@@ -9,6 +9,7 @@ the relationships between them are the ones that decide the outcome.
 import json
 import os
 import subprocess
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -416,6 +417,46 @@ def test_resolve_refuses_a_short(monkeypatch):
 
     with pytest.raises(VideoTooShort, match="47s"):
         youtube.resolve(_item(), quality=BUDGET)
+
+
+def test_a_short_saved_on_its_own_is_wanted(monkeypatch):
+    _patch_ytdlp(monkeypatch, info={**INFO, "duration": 47})
+    item = replace(_item(), extra={"saved": "2026-11-26T10:00:00+00:00"})
+
+    assert youtube.resolve(item, quality=BUDGET).selector
+
+
+# --- one video, by its own link -------------------------------------------
+
+
+def test_a_video_is_read_by_its_own_address(monkeypatch):
+    _patch_ytdlp(monkeypatch, info={
+        **INFO, "description": " What it is about. ", "timestamp": 1556956800,
+        "upload_date": "20190504", "channel": "A channel", "uploader": "someone",
+        "thumbnail": "https://i.ytimg.com/vi/x/maxres.jpg",
+    })
+
+    item = youtube.video_item(f"https://youtu.be/{VIDEO_ID}?si=abc", feed_name="Saved")
+
+    assert item.title == "A video" and item.description == "What it is about."
+    assert item.link == WATCH and item.feed_name == "Saved"
+    assert item.published == datetime(2019, 5, 4, 8, 0, tzinfo=timezone.utc)
+    assert item.author == "A channel"
+    assert item.image_url == "https://i.ytimg.com/vi/x/maxres.jpg"
+    assert item.extra == {"id": f"yt:video:{VIDEO_ID}", "duration_seconds": str(int(DURATION)),
+                          "show_title": "A channel"}
+
+
+def test_a_video_without_a_timestamp_goes_by_its_upload_date(monkeypatch):
+    _patch_ytdlp(monkeypatch, info={**INFO, "upload_date": "20190504"})
+
+    item = youtube.video_item(WATCH)
+
+    assert item.published == datetime(2019, 5, 4, tzinfo=timezone.utc)
+    assert item.image_url == youtube.YOUTUBE_THUMBNAIL.format(video_id=VIDEO_ID)
+    assert item.author is None
+    with pytest.raises(FeedError, match="Not a YouTube link"):
+        youtube.video_item("https://www.youtube.com/@channel")
 
 
 def test_resolve_keeps_a_video_just_over_the_floor(monkeypatch):

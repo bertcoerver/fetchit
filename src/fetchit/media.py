@@ -247,6 +247,29 @@ def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:
     return None
 
 
+def is_item_link(url: str | None) -> bool:
+    """Whether ``url`` names one item rather than a feed of them.
+
+    One YouTube video, one ARTE programme, one NPO Start episode: a link saved
+    for its own sake. See :mod:`fetchit.saved`.
+    """
+    from .saved import item_source
+
+    return item_source(url) is not None
+
+
+def item_feed(cfg: FeedConfig) -> ParsedFeed | None:
+    """Read ``cfg.url`` as a feed of the one item it names, if it names one.
+
+    ``None`` means "not one of those". Asked before anything else is: a saved
+    link that has been read once is answered from memory, without a word to
+    its source.
+    """
+    from .saved import parse_item
+
+    return parse_item(cfg) if is_item_link(cfg.url) else None
+
+
 def fetch_body(item: FeedItem, into: str) -> list[dict]:
     """Download the files of ``item``'s body into ``into``, for filing with it.
 
@@ -278,7 +301,8 @@ def link_source(url: str | None) -> str | None:
     """Which source reads ``url`` as a feed of its own, told from the address alone.
 
     What a link list will take: a Bayam or Les Mini Mondes magazine link, an ARTE collection, an
-    NPO Start series or a YouTube channel. ``None`` for anything else — which
+    NPO Start series or a YouTube channel — or the link of one item, a feed of
+    just that (:func:`is_item_link`). ``None`` for anything else — which
     may still be a perfectly good RSS feed, but nothing short of reading it
     tells, and such a feed is one ``url`` of its own rather than a line in a
     list.
@@ -301,7 +325,9 @@ def link_source(url: str | None) -> str | None:
         return "NPO Start"
     if YOUTUBE_CHANNEL_RE.search(url) and "/feeds/videos.xml" not in url:
         return "YouTube"
-    return None
+    from .saved import item_source
+
+    return item_source(url)
 
 
 def annotate_durations(feed_url: str, items: list[FeedItem]) -> list[FeedItem]:

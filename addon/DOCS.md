@@ -64,11 +64,18 @@ own (a `urls_file`, such as Bayam or Les Mini Mondes magazines: the link printed
 each issue). A
 tab shows the feed's links; paste a new one (or several) and **Add and
 download** fetches it straight away. Only links fetchit can read as a feed are taken —
-Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels;
+Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels,
+or the link of one video of YouTube, ARTE or NPO Start;
 anything else is refused, with the offending links named. Links are added to that feed's file, not to
 `fetchit.json`. The **New list** tab makes a new feed, kept for good, with its
 links in `lists/<name>.txt` beside `fetchit.json` — the config gains the feed,
 with the same check and `.bak` as below.
+
+The first tab is always **Saved for later**: paste the link of one video — a
+YouTube video, an ARTE programme, an NPO Start episode — and it is downloaded
+into a feed of that name, made with the first link and kept for good. A saved
+video is dated the moment it was saved rather than the day it went up, so the
+feed reads in the order things were put in it.
 
 **e-Primo** appears when a feed is a school's blog on e-Primo
 (`https://ent.e-primo.fr/blog/id/…`), which is read as you. Give it your

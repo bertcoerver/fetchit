@@ -175,7 +175,8 @@ def test_permanent_reasons_are_the_three_not_worth_retrying():
     ("https://app.bayam.tv/", None),
     ("https://app.bayam.tv/home/abc", None),
     ("https://www.youtube.com/feeds/videos.xml?channel_id=UCabc", None),
-    ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", None),
+    # One video is a feed of one item: see tests/test_saved.py.
+    ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "YouTube"),
     ("https://example.com/feed.xml", None),
     ("ftp://flyer.bayam.tv/4sYB/dj8", None),
     ("", None),

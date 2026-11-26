@@ -371,3 +371,43 @@ def test_plan_fetches_the_chosen_rung(monkeypatch):
 
     assert plan.fetch("/tmp/x", timeout=5) == "/tmp/x/video.mp4"
     assert fetched == [(lookup, "360p", "/tmp/x", 5)]
+
+
+# --- one episode, by its own link -----------------------------------------
+
+
+def _episode_queries(program=None):
+    program = program or {**PROGRAMS[0], "series": {"slug": "bureau-buitenland", "title": "Bureau Buitenland"}}
+    return [
+        {"queryKey": ["banners-by-entity:program-x"], "state": {"data": []}},
+        {"queryKey": ["program:detail-bureau-buitenland_825-include-premium"], "state": {"data": program}},
+    ]
+
+
+@pytest.mark.parametrize("page", [_page, _flight_page])
+def test_an_episode_is_read_from_its_own_page(monkeypatch, page):
+    seen = _patch_page(monkeypatch, html=page(_episode_queries()))
+    long_form = "https://npo.nl/start/serie/bureau-buitenland/seizoen-2/bureau-buitenland_825/afspelen"
+
+    item = npo.episode_item(long_form, feed_name="Saved")
+
+    assert seen == [(EPISODE_LINK, npo.PAGE_HEADERS)]
+    assert item.title == "26.000 sancties tegen Rusland, en toch is het niet genoeg"
+    assert item.link == EPISODE_LINK and item.feed_name == "Saved"
+    assert item.published == datetime.fromtimestamp(1790537400, tz=timezone.utc)
+    assert item.description == "Lang verhaal." and item.image_url == "https://assets/825.jpg"
+    assert item.extra["show_title"] == "Bureau Buitenland"
+    assert item.extra["duration_seconds"] == "1540"
+    # The same episode, whichever page it was read off.
+    assert video.item_id(item) == "npo:bureau-buitenland_825"
+
+
+def test_an_episode_page_without_its_episode_says_so(monkeypatch):
+    _patch_page(monkeypatch, html=_flight_page(_queries()))
+    with pytest.raises(FeedError, match="episode data"):
+        npo.episode_item(EPISODE_LINK)
+    _patch_page(monkeypatch, html=_page(_queries()))
+    with pytest.raises(FeedError, match="no episode details"):
+        npo.episode_item(EPISODE_LINK)
+    with pytest.raises(FeedError, match="Not an NPO Start episode link"):
+        npo.episode_item(SERIES_URL)

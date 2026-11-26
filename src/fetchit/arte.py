@@ -215,6 +215,40 @@ def resolve(item: FeedItem, *, quality: Quality = Quality()) -> HlsPlan:
     )
 
 
+def program_item(url: str, *, feed_name: str = "") -> FeedItem:
+    """One programme, read from its own player config rather than off a collection.
+
+    The config says everything a collection's listing says about an episode —
+    the show, the episode's own subtitle, its synopsis, artwork and length —
+    and the day its rights window opened, which is its date. For a link saved
+    on its own — see :mod:`fetchit.saved`.
+    """
+    found = arte_program_id(url)
+    if not found:
+        raise FeedError(f"Not an ARTE video link: {url!r}")
+    program_id, lang = found
+    attributes = _config_attributes(program_id, lang)
+    metadata = attributes.get("metadata")
+    if not isinstance(metadata, dict) or not (metadata.get("title") or metadata.get("subtitle")):
+        raise FeedError(f"ARTE says nothing about {program_id}")
+
+    show_title = str(metadata.get("title") or "")
+    extra = {"program_id": program_id, "show_title": show_title}
+    duration = (metadata.get("duration") or {}).get("seconds")
+    if duration:
+        extra["duration_seconds"] = str(duration)
+    begin = (attributes.get("rights") or {}).get("begin")
+    return FeedItem(
+        title=str(metadata.get("subtitle") or "").strip() or show_title,
+        description=strip_html(str(metadata.get("description") or "")),
+        link=((metadata.get("link") or {}).get("url")) or url,
+        published=_as_datetime(begin) if begin else None,
+        image_url=_first_image(metadata),
+        feed_name=feed_name,
+        extra=extra,
+    )
+
+
 def _config_attributes(program_id: str, lang: str) -> dict:
     """Fetch one programme's player config and return its ``attributes``."""
     url = ARTE_PLAYER_API.format(lang=lang, program_id=program_id)

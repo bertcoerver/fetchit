@@ -141,6 +141,8 @@ pruned.
   video, not its last fifteen.
 - **A [link list](#link-lists) takes everything** behind its links, however old:
   each link is there on purpose, and a back issue added later is wanted too.
+  The link of a single video is taken as that video: see
+  [Saved for later](#saved-for-later).
 - **`since` makes a feed a backfill**: everything published since that date,
   oldest first. For a YouTube channel that includes the whole back catalogue,
   read from its uploads playlist (no API key), dated 25 videos a run. Pair it with
@@ -249,6 +251,47 @@ would be, and their items make one feed. Adding a link is a line in the file;
 the config stays as it is. A file that is missing or holds no link is an error,
 like any other malformed feed. (`urls`, the same list inline in the config,
 works too.)
+
+### Saved for later
+
+A link in a list does not have to be something to follow. The link of **one
+video** — a YouTube video, an ARTE programme, an NPO Start episode — is a feed of
+just that video, so a link list of such links is a feed of whatever you saved:
+
+```json
+{"name": "Saved for later", "urls_file": "lists/saved-for-later.txt", "keep_days": 0}
+```
+
+```text
+# lists/saved-for-later.txt
+https://www.youtube.com/watch?v=jNQXAC9IVRw
+https://www.arte.tv/fr/videos/127395-115-A/le-dessous-des-images/
+https://npo.nl/start/afspelen/hijskraan_1
+```
+
+The panel of `fetchit serve` always has a **Saved for later** tab for this: paste
+a link there and it is downloaded; the feed and its file are made with the first
+one. The name is only the panel's — any link list takes such links, and they can
+sit beside a channel or a series in the same list.
+
+A saved video differs from the same video read off its channel in a few ways:
+
+- **It is dated when it was saved**, not when it went up: a 2019 documentary
+  saved this morning is this morning's item, filed after what was saved before
+  it. (Whatever reads the library by date only moves forward, and would never
+  send on an item filed under a date years back.) The source's own date is kept
+  as the `originally_published` field, and an episode's place in its series as
+  `source_season` and `source_episode`.
+- **Its title names its show** where the source has one: `Het Klokhuis - Hijskraan`.
+- **A Short is downloaded**: one you pasted the link of is one you want.
+- **It is looked up once.** What the source said is remembered in the cache, so
+  a long list costs nothing to read again.
+- **A link that can't be read is left for the next run** — said on stderr and in
+  the log — and the rest of the list carries on. A link that never will be (a
+  video taken down before it was fetched) says so every run until you remove it.
+
+Like any feed, a saved list files its items in order: a download that fails
+stops the list for that run, and the next run starts with it.
 
 The GUI shows every link list as a tab: its links, a box to paste new ones,
 **Add and download**. Its last tab, **New list**, makes a feed: the name and the

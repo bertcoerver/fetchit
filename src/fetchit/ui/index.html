@@ -145,8 +145,8 @@
       <label class="field hidden" id="list-name-field">Name of the new feed
         <input id="list-name" placeholder="Mes premières Belles Histoires" autocomplete="off">
       </label>
-      <label class="field">Links to add, one per line — Bayam or Les Mini Mondes magazine links, ARTE collections, NPO Start series or YouTube channels
-        <textarea id="list-add" spellcheck="false" autocapitalize="off" placeholder="https://flyer.bayam.tv/4sYB/dj8"></textarea>
+      <label class="field"><span id="list-add-label"></span>
+        <textarea id="list-add" spellcheck="false" autocapitalize="off"></textarea>
       </label>
       <div class="actions">
         <button class="primary" data-list-add="run">Add and download</button>
@@ -389,20 +389,28 @@ window.addEventListener("beforeunload", (e) => { if (dirty()) { e.preventDefault
 // A new link — say the one printed in this month's magazine — is a line in that
 // file. Whatever was pasted, the links are picked out of it, so a line from an
 // email or a note works as well. The last tab makes a new list.
+// The first tab is always "Saved for later": a list for the link of one video,
+// wanted for itself rather than as the start of following something. It is an
+// ordinary link list, made with its first link — until then the tab stands for
+// a feed that is not there yet.
 // NEW stands for the last tab in activeList; no feed name can be a Symbol. The
 // tab itself is told apart by data-new, not by its data-list: a marker written
 // into the HTML comes back from the parser changed (it turns a NUL into U+FFFD),
 // and then matched nothing.
 const NEW = Symbol("new list");
-let lists = [], activeList = null;
+const SAVED = "Saved for later";
+let lists = [], activeList = SAVED;
 
 function listLine(html, cls = "muted") { $("list-line").className = "config-line " + cls; $("list-line").innerHTML = html; }
 
 function showLists(found) {
   lists = found;
-  if (activeList !== NEW && !lists.some(f => f.name === activeList)) activeList = lists.length ? lists[0].name : NEW;
-  $("list-tabs").innerHTML = lists.map(f =>
-    `<button role="tab" data-list="${esc(f.name)}" aria-selected="${f.name === activeList}">${esc(f.name)}<span class="count">${f.list.links.length}</span></button>`
+  if (activeList !== NEW && !lists.some(f => f.name === activeList)) activeList = SAVED;
+  const saved = lists.find(f => f.name === SAVED);
+  const tabs = [saved || {name: SAVED}, ...lists.filter(f => f !== saved)];
+  $("list-tabs").innerHTML = tabs.map(f =>
+    `<button role="tab" data-list="${esc(f.name)}" aria-selected="${f.name === activeList}">${esc(f.name)}` +
+    (f.list ? `<span class="count">${f.list.links.length}</span>` : "") + `</button>`
   ).join("") + `<button role="tab" data-list="" data-new aria-selected="${activeList === NEW}">+ New list</button>`;
   $("list-tabs").querySelectorAll("[data-list]").forEach(b => b.addEventListener("click", () => {
     const chosen = "new" in b.dataset ? NEW : b.dataset.list;
@@ -410,15 +418,24 @@ function showLists(found) {
     showLists(lists);
   }));
   const f = lists.find(f => f.name === activeList);
-  $("list-name-field").classList.toggle("hidden", !!f);
+  const one = activeList === SAVED;
+  $("list-name-field").classList.toggle("hidden", !!f || one);
   $("list-links").classList.toggle("hidden", !f);
+  $("list-add-label").textContent = one
+    ? "Links to save, one per line — a YouTube video, an ARTE programme or an NPO Start episode"
+    : "Links to add, one per line — Bayam or Les Mini Mondes magazine links, ARTE collections, NPO Start series or YouTube channels; or one video of YouTube, ARTE or NPO Start";
+  $("list-add").placeholder = one ? "https://www.youtube.com/watch?v=…" : "https://flyer.bayam.tv/4sYB/dj8";
+  const savedAbout = "The link of one video, wanted for itself: paste it and it is downloaded into this feed, dated the moment it was saved rather than the day it went up. ";
   if (f) {
-    $("list-about").innerHTML = `Read from <code>${esc(f.list.file)}</code>, beside the configuration — one link per line; edit it there or here.`;
+    $("list-about").innerHTML = (one ? savedAbout : "") +
+      `Read from <code>${esc(f.list.file)}</code>, beside the configuration — one link per line; edit it there or here.`;
     const last = f.list.links.length === 1;
     $("list-links").innerHTML = f.list.links.map(u =>
       `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a>` +
       `<button class="small" data-unlink="${esc(u)}" ${last ? "disabled title=\"A feed needs at least one link\"" : ""}>Remove</button></li>`).join("");
     $("list-links").querySelectorAll("[data-unlink]").forEach(b => b.addEventListener("click", () => removeLink(f.name, b.dataset.unlink)));
+  } else if (one) {
+    $("list-about").innerHTML = savedAbout + "The feed is made with the first link, and kept for good.";
   } else {
     $("list-about").innerHTML = "A feed made of separate links — the ones printed in each issue of a Bayam or Les Mini Mondes magazine, for instance. " +
       "Name it and give it its first links: its list is kept in a file of its own, and the feed is kept for good. " +
@@ -439,6 +456,14 @@ const LINK_SOURCES = [
   ["NPO Start", u => /^(www\.)?npo\.nl$/.test(u.hostname) && /^\/start\/serie\/[\w-]+(\/afleveringen(\/[\w-]+)?)?\/?$/i.test(u.pathname)],
   ["YouTube", u => /^((www|m)\.)?youtube\.com$/.test(u.hostname) &&
                    /^\/(channel\/UC[\w-]+|@[\w.-]+|c\/[\w.-]+|user\/[\w.-]+)(\/[\w-]*)?\/?$/.test(u.pathname)],
+  // One item rather than a feed of them — fetchit.saved.item_source.
+  ["YouTube", u => (/^((www|m|music)\.)?youtube\.com$/.test(u.hostname) &&
+                    (/^\/(shorts|embed|live|v)\/[\w-]{11}/.test(u.pathname) ||
+                     (u.pathname === "/watch" && /^[\w-]{11}/.test(u.searchParams.get("v") || "")))) ||
+                   (u.hostname === "youtu.be" && /^\/[\w-]{11}/.test(u.pathname))],
+  ["ARTE", u => /^(www\.)?arte\.tv$/.test(u.hostname) && /^\/[a-z]{2}\/videos\/\d{4,}-\d{3}-[A-Z](\/|$)/i.test(u.pathname)],
+  ["NPO Start", u => /^(www\.)?npo\.nl$/.test(u.hostname) &&
+                     /^\/start\/(afspelen\/[\w-]+|serie\/[\w-]+\/[\w-]+\/[\w-]+\/afspelen)\/?$/i.test(u.pathname)],
 ];
 function linkSource(link) {
   let u; try { u = new URL(link); } catch (e) { return null; }
@@ -454,7 +479,7 @@ function checkPasted() {
   $("list-add").setAttribute("aria-invalid", refused.length ? "true" : "false");
   document.querySelectorAll("[data-list-add]").forEach(b => b.disabled = refused.length > 0);
   if (refused.length) listLine("Not a link fetchit can read: " + refused.map(l => `<code>${esc(l)}</code>`).join(", ") +
-    ". A link list takes Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels.", "bad");
+    ". A link list takes the link of one video (YouTube, ARTE, NPO Start), or of a whole source: Bayam and Les Mini Mondes magazine links, ARTE collections, NPO Start series and YouTube channels.", "bad");
   else if ($("list-line").classList.contains("bad")) listLine("");
 }
 $("list-add").addEventListener("input", checkPasted);
@@ -465,7 +490,8 @@ async function addLinks(thenRun) {
   if (!feed) return listLine("Which feed? Give it a name.", "bad");
   if (!links.length) return listLine("No link there. Links start with <code>https://</code>.", "bad");
   if (refusedLinks().length) return checkPasted();
-  const making = activeList === NEW;
+  // A feed without a list yet is made, or changed, in the configuration.
+  const making = !lists.some(f => f.name === feed);
   if (making && dirty()) return listLine("The configuration below has unsaved changes. Save or revert them first.", "bad");
   try {
     const r = await api("api/links", {method: "POST", body: {feed, links}});
@@ -473,7 +499,7 @@ async function addLinks(thenRun) {
     if (r.already) said.push(`${r.already} already there`);
     listLine(said.join(", ") + ".", r.added.length ? "ok" : "warn");
     if (r.added.length) $("list-add").value = "";
-    if (making) { activeList = r.feed; $("list-name").value = ""; }
+    if (activeList === NEW) { activeList = r.feed; $("list-name").value = ""; }
     await loadConfig(true); loadStatus(); loadFeeds(); loadActivity();
     if (thenRun && r.added.length && !watching) start("api/run", {feeds: [r.feed]});
   } catch (e) { listLine(esc(e.message), "bad"); }

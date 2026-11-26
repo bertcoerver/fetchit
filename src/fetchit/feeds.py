@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -771,16 +772,39 @@ def parse_feed(cfg: FeedConfig) -> ParsedFeed:
     One address is the usual case. A feed made of several — a list of magazine
     links — is each of them read in turn and their items put together, with
     the first address speaking for the feed as a whole.
+
+    One of several that is the link of a single item (see
+    :func:`~fetchit.media.is_item_link`) and can't be read is left for the
+    next run, and the rest of the list carries on: a video that has been taken
+    down, or a source blocked just now, should not hold up everything else
+    that was saved beside it.
     """
     if len(cfg.sources) == 1:
         return _parse_one(cfg)
 
-    parts = [_parse_one(replace(cfg, url=url, urls=())) for url in cfg.sources]
+    parts = [_parse_part(cfg, url) for url in cfg.sources]
     first = next((p for p in parts if p.title or p.image_url), parts[0])
     validators = {url: v for part in parts for url, v in part.validators.items()}
     return replace(
         first, items=[item for part in parts for item in part.items], validators=validators
     )
+
+
+def _parse_part(cfg: FeedConfig, url: str) -> ParsedFeed:
+    """Read one of ``cfg``'s several addresses — see :func:`parse_feed`."""
+    from .errorlog import log_line
+    from .media import is_item_link
+
+    part = replace(cfg, url=url, urls=())
+    if not is_item_link(url):
+        return _parse_one(part)
+    try:
+        return _parse_one(part)
+    except FeedError as exc:
+        said = f"[{cfg.name}] {url} left for the next run: {exc}"
+        print(said, file=sys.stderr)
+        log_line(said)
+        return ParsedFeed(items=[])
 
 
 def remember_validators(parsed: ParsedFeed) -> None:
@@ -795,6 +819,9 @@ def remember_validators(parsed: ParsedFeed) -> None:
 
 def _parse_one(cfg: FeedConfig) -> ParsedFeed:
     """Fetch and parse ``cfg.url`` into a :class:`ParsedFeed`.
+
+    The link of a single item — one video, saved for its own sake — is a feed
+    of that item; see :mod:`fetchit.saved`. Otherwise:
 
     Usually that means RSS or Atom, and a video source's own page counts as
     either a substitute for one or a signpost to one: an ARTE collection page is
@@ -824,8 +851,13 @@ def _parse_one(cfg: FeedConfig) -> ParsedFeed:
         channel_feed_url,
         check_source_available,
         collection_feed,
+        item_feed,
         with_archive,
     )
+
+    saved = item_feed(cfg)
+    if saved is not None:
+        return saved
 
     check_source_available(cfg.url)
 
@@ -908,11 +940,17 @@ def feed_image(cfg: FeedConfig) -> str | None:
     hasn't changed since the last run would otherwise answer 304 and say nothing
     at all.
 
+    ``None`` too for a feed whose address is the link of one item (see
+    :func:`~fetchit.media.is_item_link`): a video is not a show, and has no
+    artwork to speak for a feed of saved links.
+
     Raises :class:`SourceBlocked` or :class:`FeedError` if the source can't be
     read.
     """
-    from .media import check_source_available, source_image
+    from .media import check_source_available, is_item_link, source_image
 
+    if is_item_link(cfg.url):
+        return None
     check_source_available(cfg.url)
     image = source_image(cfg.url)
     if image is not None:

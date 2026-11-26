@@ -86,6 +86,17 @@ YOUTUBE_PUBLISHED_TTL = None
 # we could not have downloaded either, so nothing is lost by it being final.
 YOUTUBE_UNDATED_TTL = None
 
+# A link saved on its own (:mod:`fetchit.saved`): what its source said about
+# it, and the moment it was first read, which is the date it is filed under.
+# The second is the closest thing in here to a record of what fetchit did, and
+# it still stays on the right side of the line: whether the item is downloaded
+# is the state's to say, and a saved link is wanted whatever its date. Deleting
+# this costs one lookup per saved link and nothing else — those already filed
+# are done with, and one still owed is filed under the later date it is read
+# again at. Kept indefinitely, because a list of saved links is read every run
+# and none of them will say anything new.
+SAVED_ITEM_TTL = None
+
 _lock = threading.Lock()
 _data: dict[str, dict[str, Any]] | None = None
 _dirty = False
