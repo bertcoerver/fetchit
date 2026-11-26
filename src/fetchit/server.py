@@ -50,6 +50,10 @@ DEFAULT_PORT = 8099
 SCHEDULE_ENV = "FETCHIT_SCHEDULE"
 GUI_FROM_ENV = "FETCHIT_GUI_FROM"
 UPDATE_YT_DLP_ENV = "FETCHIT_UPDATE_YT_DLP"
+
+# What the daily upgrade installs: yt-dlp with the extras fetchit[video] asks
+# for, so the challenge solver pinned to each release moves along with it.
+YT_DLP_REQUIREMENT = "yt-dlp[default,deno]"
 DEFAULT_FROM = "127.0.0.1,::1"
 
 # yt-dlp breaks whenever YouTube changes, so a pinned one rots within weeks.
@@ -331,7 +335,7 @@ class Service:
             return
         print("Updating yt-dlp...")
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir", "--upgrade", "yt-dlp"],
+            [sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir", "--upgrade", YT_DLP_REQUIREMENT],
             capture_output=True,
             text=True,
         )

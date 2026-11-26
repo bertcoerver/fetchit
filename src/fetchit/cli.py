@@ -148,6 +148,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         ("ffmpeg", "ARTE videos, and joining YouTube's video and audio"),
         ("ffprobe", "reading a downloaded file's length"),
         ("yt-dlp", "YouTube feeds (`pip install fetchit[video]`)"),
+        ("deno", "YouTube's JavaScript challenges when signed in (`pip install fetchit[video]`)"),
     ):
         found = shutil.which(tool)
         print(f"  {tool:<8} {found or 'not found'}  — needed for {why}")

@@ -33,8 +33,11 @@ fetchit = "fetchit.cli:main"
 [project.optional-dependencies]
 # yt-dlp is a large, weekly-moving package and only YouTube feeds touch it, so
 # it is asked for explicitly: `pip install fetchit[video]`. fetchit runs it as
-# a command, and this is what puts that command on PATH.
-video = ["yt-dlp>=2024.8"]
+# a command, and this is what puts that command on PATH. `default` brings the
+# script that solves YouTube's JavaScript challenges, pinned to the yt-dlp it
+# belongs to, and `deno` the runtime it runs in: without them a signed-in
+# session — the answer to a bot check — gets no formats at all.
+video = ["yt-dlp[default,deno]>=2026.11"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
