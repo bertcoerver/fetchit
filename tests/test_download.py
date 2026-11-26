@@ -315,3 +315,38 @@ def test_download_temp_really_gets_a_spaced_url_past_http_client(monkeypatch):
     with pytest.raises(FeedError, match="no network in tests"):
         with download_temp("http://a.invalid/My Show/ep 1.mp3"):
             pass
+
+
+class _CutShort(_FakeResponse):
+    """A response whose connection closed before the announced length arrived."""
+
+    def __init__(self, body, announced):
+        super().__init__(body)
+        self.headers = {"Content-Length": str(announced)}
+
+
+def test_a_download_cut_short_is_not_a_download(monkeypatch, tmp_path):
+    # http.client says nothing when a chunked read meets a closed connection:
+    # the first 74 MB of a 2.8 GB video looked like the whole of it.
+    monkeypatch.setattr(feeds.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        download, "urlopen", lambda url, timeout=30: _CutShort(b"half", 8)
+    )
+    target = tmp_path / "video.mp4"
+
+    with pytest.raises(FeedError, match="4 of 8 bytes"):
+        download.download_to("https://a/video.mp4", str(target))
+
+    assert not target.exists()
+    assert not (tmp_path / "video.mp4.part").exists()
+
+
+def test_a_download_cut_short_is_tried_again(monkeypatch, tmp_path):
+    monkeypatch.setattr(feeds.time, "sleep", lambda seconds: None)
+    answers = [_CutShort(b"half", 8), _CutShort(b"all of it", 9)]
+    monkeypatch.setattr(download, "urlopen", lambda url, timeout=30: answers.pop(0))
+    target = tmp_path / "video.mp4"
+
+    download.download_to("https://a/video.mp4", str(target))
+
+    assert target.read_bytes() == b"all of it"

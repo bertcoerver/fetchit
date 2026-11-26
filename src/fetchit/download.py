@@ -68,6 +68,43 @@ def safe_url(url: str) -> str:
     )
 
 
+def copy_body(response, out, *, chunk_size: int = 64 * 1024) -> int:
+    """Write ``response``'s body to ``out``; return how many bytes that was.
+
+    Raises :class:`ConnectionError` if the body stopped short of the
+    ``Content-Length`` the server announced. http.client does not: read a chunk
+    at a time, a connection closed halfway is just a read that returns nothing,
+    which is also what the end of a whole file looks like. So an hour and a half
+    of video arrived as its first 74 MB — an mp4 without its index, which no
+    player opens — and was filed as fetched. Being an ``OSError``, this is
+    retried like any other fault of the network.
+
+    A response that announces no length (chunked, or a test's stand-in) has
+    nothing to be held to.
+    """
+    received = 0
+    while chunk := response.read(chunk_size):
+        out.write(chunk)
+        received += len(chunk)
+    expected = _announced_length(response)
+    if expected is not None and received < expected:
+        raise ConnectionError(
+            f"connection closed after {received} of {expected} bytes"
+        )
+    return received
+
+
+def _announced_length(response) -> int | None:
+    """The ``Content-Length`` ``response`` came with, or ``None`` if it gave none."""
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        return int(headers.get("Content-Length"))
+    except (TypeError, ValueError):
+        return None
+
+
 # A reachability probe is answering one question — is this host there — and must
 # not become the slowest part of finding out that it isn't.
 PROBE_TIMEOUT = 5
@@ -155,8 +192,7 @@ def download_temp(
                 out.truncate()
                 try:
                     with urlopen(_request(url), timeout=timeout) as response:
-                        while chunk := response.read(64 * 1024):
-                            out.write(chunk)
+                        copy_body(response, out)
                 except _FETCH_ERRORS as exc:
                     raise FeedError(f"Could not download {url!r}: {exc}") from exc
 
@@ -191,8 +227,7 @@ def download_to(
                 request = _request(url, headers)
                 try:
                     with urlopen(request, timeout=timeout) as response:
-                        while chunk := response.read(64 * 1024):
-                            out.write(chunk)
+                        copy_body(response, out)
                 except _FETCH_ERRORS as exc:
                     raise FeedError(f"Could not download {url!r}: {exc}") from exc
 

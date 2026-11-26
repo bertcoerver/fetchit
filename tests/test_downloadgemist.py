@@ -481,3 +481,28 @@ def test_a_complaint_from_http_client_is_a_failure_like_any_other(
         downloadgemist.fetch(lookup, "360p", str(tmp_path), timeout=900)
 
     assert cache.get("downloadgemist_failed", EPISODE)["count"] == 1
+
+
+def test_a_file_cut_short_counts_as_a_failure(clock, site, monkeypatch, tmp_path):
+    # The connection closing halfway is not an error to http.client, so this
+    # was a success: 74 MB of an hour and a half, filed as the episode.
+    import io
+
+    class CutShort(io.BytesIO):
+        headers = {"Content-Length": "8"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    lookup = downloadgemist.streams(EPISODE)
+    monkeypatch.setattr(downloadgemist, "_download", _REAL_DOWNLOAD)
+    monkeypatch.setattr(downloadgemist, "_open", lambda request, timeout: CutShort(b"half"))
+    monkeypatch.setattr("fetchit.feeds.time.sleep", lambda seconds: None)
+
+    with pytest.raises(FeedError, match="4 of 8 bytes"):
+        downloadgemist.fetch(lookup, "360p", str(tmp_path), timeout=900)
+
+    assert cache.get("downloadgemist_failed", EPISODE)["count"] == 1

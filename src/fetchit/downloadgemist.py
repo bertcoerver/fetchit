@@ -57,7 +57,7 @@ from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from . import cache, timing
-from .download import safe_url
+from .download import copy_body, safe_url
 from .feeds import FeedError, retrying, strip_html
 from .media import VideoGone
 
@@ -410,8 +410,7 @@ def _download(file_url: str, path: str, *, timeout: float) -> None:
         request = Request(file_url, headers=HEADERS)
         try:
             with _open(request, timeout=timeout) as response, open(path, "wb") as out:
-                while chunk := response.read(256 * 1024):
-                    out.write(chunk)
+                copy_body(response, out, chunk_size=256 * 1024)
         # HTTPException too: http.client's complaints (a url it won't send, a
         # response cut short) are not OSErrors, and one that escaped as itself
         # would skip the backoff below and be asked for again every run.
