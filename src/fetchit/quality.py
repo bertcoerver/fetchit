@@ -21,6 +21,16 @@ for the whole library:
     rendition needs more is not downloaded at all. 4 by default — about 380 MB
     at 95 MB a part, which is a two-hour documentary at 360p.
 
+``small``
+    Off by default. An object of the three settings above, for a **second,
+    smaller copy** of every video, downloaded beside the first: the feed that
+    goes to a media server at 1080p and to Signal too sets
+    ``"small": {"part_size_mb": 95}`` and has a file for each. The copy is filed
+    out of the media server's sight (see :mod:`fetchit.library`) and named in
+    the item's record, where rssignal and db-podcast find it. Where both
+    settings arrive at the same rendition there is nothing to download twice,
+    and the item has the one file.
+
 Sizes are each source's own estimates — exact where it reports a file size,
 bitrate times duration where it doesn't — so they are decided before
 downloading anything, and a dry run can say what a video would arrive at.
@@ -40,7 +50,7 @@ MB = 1024 * 1024
 DEFAULT_MAX_HEIGHT = 1080
 DEFAULT_MAX_PARTS = 4
 
-QUALITY_KEYS = ("max_height", "part_size_mb", "max_parts")
+QUALITY_KEYS = ("max_height", "part_size_mb", "max_parts", "small")
 
 
 @dataclass(frozen=True)
@@ -48,37 +58,43 @@ class Quality:
     """How to choose between the renditions of a video. See the module docstring.
 
     ``part_bytes`` is ``part_size_mb`` in bytes, or ``None`` for no size budget.
-    ``max_height`` ``None`` means no cap at all.
+    ``max_height`` ``None`` means no cap at all. ``small`` is the quality of
+    the second, smaller copy, or ``None`` for no second copy.
     """
 
     max_height: int | None = DEFAULT_MAX_HEIGHT
     part_bytes: int | None = None
     max_parts: int = DEFAULT_MAX_PARTS
+    small: Quality | None = None
 
 
-def parse_quality(raw: object, where: str, base: Quality = Quality()) -> Quality:
+def parse_quality(
+    raw: object, where: str, base: Quality = Quality(), *, _keys: tuple[str, ...] = QUALITY_KEYS,
+    _name: str = "quality",
+) -> Quality:
     """Read a ``quality`` config object on top of ``base``, or raise ValueError.
 
     Keys left out keep ``base``'s value, so a feed can override one setting of
     the library-wide default without restating the others. ``null`` for
-    ``max_height`` or ``part_size_mb`` switches that limit off.
+    ``max_height`` or ``part_size_mb`` switches that limit off, and for
+    ``small`` it switches the second copy off.
     """
     if raw is None:
         return base
     if not isinstance(raw, dict):
         raise ValueError(
-            f"{where} quality must be an object with any of {list(QUALITY_KEYS)}."
+            f"{where} {_name} must be an object with any of {list(_keys)}."
         )
-    unknown = set(raw) - set(QUALITY_KEYS)
+    unknown = set(raw) - set(_keys)
     if unknown:
         raise ValueError(
-            f"{where} quality has unknown key(s) {sorted(unknown)}; expected "
-            f"{list(QUALITY_KEYS)}."
+            f"{where} {_name} has unknown key(s) {sorted(unknown)}; expected "
+            f"{list(_keys)}."
         )
 
     max_height = base.max_height
     if "max_height" in raw:
-        max_height = _whole(raw["max_height"], f"{where} quality.max_height", nullable=True)
+        max_height = _whole(raw["max_height"], f"{where} {_name}.max_height", nullable=True)
 
     part_bytes = base.part_bytes
     if "part_size_mb" in raw:
@@ -87,16 +103,33 @@ def parse_quality(raw: object, where: str, base: Quality = Quality()) -> Quality
             part_bytes = None
         elif isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             raise ValueError(
-                f"{where} quality.part_size_mb must be a positive number of MB, or null."
+                f"{where} {_name}.part_size_mb must be a positive number of MB, or null."
             )
         else:
             part_bytes = int(value * MB)
 
     max_parts = base.max_parts
     if "max_parts" in raw:
-        max_parts = _whole(raw["max_parts"], f"{where} quality.max_parts")
+        max_parts = _whole(raw["max_parts"], f"{where} {_name}.max_parts")
 
-    return Quality(max_height=max_height, part_bytes=part_bytes, max_parts=max_parts)
+    small = base.small
+    if "small" in raw:
+        if raw["small"] is None:
+            small = None
+        else:
+            # Read on top of the library's own small copy, where it has one;
+            # otherwise it starts from nothing taller than the main copy.
+            small = parse_quality(
+                raw["small"],
+                where,
+                small or Quality(max_height=max_height),
+                _keys=QUALITY_KEYS[:-1],
+                _name="quality.small",
+            )
+
+    return Quality(
+        max_height=max_height, part_bytes=part_bytes, max_parts=max_parts, small=small
+    )
 
 
 def _whole(value: object, what: str, *, nullable: bool = False) -> int | None:

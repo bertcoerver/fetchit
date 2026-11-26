@@ -400,3 +400,82 @@ def test_feed_json_names_the_cover_that_is_there(tmp_path):
     update_artwork(root, cfg, {AUDIO}, _file(tmp_path / "v1.jpg", PNG), {})
     write_feed(root, cfg, ParsedFeed(items=[], title="Cartes"), {AUDIO})
     assert _record(tmp_path / "podcasts" / "Cartes" / "feed.json")["image"] == "cover.png"
+
+
+# --- a second, smaller copy -------------------------------------------------
+
+
+def _with_small(root, title="Ep", item_id="a"):
+    return write_item(
+        root, CFG, PARSED, _item(title), VIDEO, item_id=item_id,
+        media=_staged(root, "big.mp4", b"big"), small=_staged(root, "small.mp4", b"small"),
+    )
+
+
+def test_a_small_copy_is_filed_out_of_the_shows_folder_and_named_in_the_record(tmp_path):
+    root = str(tmp_path)
+    record = _record(_with_small(root))
+
+    stem = "Le Dessous des Images - S2026E101901 - Ep"
+    assert record["media"] == stem + ".mp4"
+    assert record["small"] == f"small/Le Dessous des Images/Season 2026/{stem}.mp4"
+    assert (tmp_path / record["small"]).read_bytes() == b"small"
+    season = tmp_path / "shows" / "Le Dessous des Images" / "Season 2026"
+    assert (season / record["media"]).read_bytes() == b"big"
+    # One video in the folder a media server reads.
+    assert [p.name for p in season.glob("*.mp4")] == [stem + ".mp4"]
+
+
+def test_an_item_without_a_small_copy_says_nothing_of_one(tmp_path):
+    root = str(tmp_path)
+    path = write_item(root, CFG, PARSED, _item(), VIDEO, item_id="a", media=_staged(root, "a.mp4"))
+    assert "small" not in _record(path)
+    assert not (tmp_path / "small").exists()
+
+
+def test_a_small_copy_goes_with_its_item(tmp_path):
+    root = str(tmp_path)
+    kept = _record(_with_small(root, "Keep", "keep"))
+    gone = _record(_with_small(root, "Go", "go"))
+
+    library.remove_items(root, CFG.name, {"go"})
+
+    assert not (tmp_path / gone["small"]).exists()
+    assert (tmp_path / kept["small"]).exists()
+
+    library.remove_items(root, CFG.name, {"keep"})
+    assert list((tmp_path / "small").iterdir()) == []  # nothing left: its folders go too
+
+
+def test_pruning_takes_the_small_copy_too(tmp_path):
+    root = str(tmp_path)
+    path = _with_small(root)
+    record = _record(path)
+    record["fetched"] = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh)
+
+    assert prune(root, {"Le Dessous des Images": 30}) == 1
+    assert not (tmp_path / record["small"]).exists()
+
+
+def test_an_item_filed_again_without_a_small_copy_loses_the_old_one(tmp_path):
+    root = str(tmp_path)
+    before = _record(_with_small(root))
+    path = write_item(root, CFG, PARSED, _item("Ep"), VIDEO, item_id="a", media=_staged(root, "b.mp4"))
+    assert "small" not in _record(path)
+    assert not (tmp_path / before["small"]).exists()
+
+
+def test_a_record_cannot_point_the_small_copy_outside_its_folder(tmp_path):
+    root = str(tmp_path)
+    path = _with_small(root)
+    record = _record(path)
+    outside = tmp_path / "shows" / "precious.mp4"
+    outside.write_bytes(b"x")
+    record["small"] = "small/../shows/precious.mp4"
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(record, fh)
+
+    library.remove_items(root, CFG.name, {"a"})
+    assert outside.exists()

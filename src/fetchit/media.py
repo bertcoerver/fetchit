@@ -29,6 +29,8 @@ reasons not to download something at all.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -221,6 +223,37 @@ def resolve(item: FeedItem, quality: Quality = Quality()) -> Plan:
     if is_video_enclosure(item):
         return EnclosurePlan(item.enclosure_url or "", ".mp4")
     raise FeedError(f"Nothing to download for {item.title!r}")
+
+
+def resolve_small(item: FeedItem, quality: Quality, main: Plan) -> Plan | None:
+    """The plan for ``item``'s second, smaller copy, or ``None`` if it gets none.
+
+    It gets none where the feed asks for none (no ``quality.small``), where the
+    small copy would be the very rendition ``main`` is, where the item's source
+    offers no choice of rendition, and where even its smallest is over the
+    small copy's size budget: an item too big to send is still one to watch.
+    """
+    if quality.small is None or not hasattr(main, "rendition"):
+        return None
+    try:
+        plan = resolve(item, quality.small)
+    except VideoTooBig:
+        return None
+    if getattr(plan, "rendition", None) == main.rendition:
+        return None
+    return plan
+
+
+@contextmanager
+def one_item() -> Iterator[None]:
+    """Within this, the downloads made are one item's: its copies, one visit.
+
+    Only Downloadgemist cares — see :func:`fetchit.downloadgemist.one_visit`.
+    """
+    from . import downloadgemist
+
+    with downloadgemist.one_visit():
+        yield
 
 
 def collection_feed(cfg: FeedConfig) -> ParsedFeed | None:

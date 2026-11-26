@@ -489,3 +489,36 @@ def test_nothing_is_forgotten_while_a_run_is_going(world):
 def test_forgetting_names_a_feed_that_is_in_the_config(world):
     with pytest.raises(ConfigError, match="No feed called"):
         run.forget(world.config(CHANNEL), "Nope", ["x"])
+
+
+# --- a second, smaller copy -------------------------------------------------
+
+
+def test_a_feed_with_a_small_quality_files_both_copies(world, monkeypatch):
+    world.items[CHANNEL.url] = [_video(1)]
+
+    class SmallPlan(FakePlan):
+        def fetch(self, into, *, timeout):
+            path = os.path.join(into, "video.mp4")
+            with open(path, "wb") as fh:
+                fh.write(b"small")
+            return path
+
+    monkeypatch.setattr(run, "resolve_small", lambda item, quality, plan: SmallPlan(item))
+    run.run(world.config(CHANNEL))
+
+    (record,) = records(world.root, "Channel")
+    with open(os.path.join(os.path.dirname(record["_path"]), record["media"]), "rb") as fh:
+        assert fh.read() == b"Video 1"
+    with open(os.path.join(world.root, record["small"]), "rb") as fh:
+        assert fh.read() == b"small"
+
+
+def test_a_small_copy_that_fails_leaves_the_item_for_the_next_run(world, monkeypatch):
+    world.items[CHANNEL.url] = [_video(1)]
+    monkeypatch.setattr(
+        run, "resolve_small", lambda item, quality, plan: FakePlan(item, FeedError("no"))
+    )
+    run.run(world.config(CHANNEL))
+    assert world.titles("Channel") == []
+    assert not State.load(world.root).seen("Channel", "youtube:video000001")

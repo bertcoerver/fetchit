@@ -21,6 +21,8 @@ db-podcast, a media server — so it is written down here once::
             feed.json  cover.jpg
             2026-10-19 - <Title>.json
             2026-10-19 - <Title>-1.jpg      a post's photos, where it has a body
+        small/<Feed>/Season 2026/           the smaller copies, where a feed has them
+            <Feed> - S2026E101901 - <Title>.mp4
         .fetchit/                           fetchit's own: state, lock, staging
 
 **An item exists when its record does.** Everything an item consists of is
@@ -36,6 +38,18 @@ needs nothing else: ``title``, ``description``, ``published`` (ISO 8601),
 place in a series, ``number`` where the source numbers its episodes,
 ``duration`` in seconds, and ``fields`` — every field the source gave, as the
 strings a filter sees. ``format`` says which version of this layout it is.
+
+**A video may come in two sizes.** A feed with ``quality.small`` set (see
+:mod:`fetchit.quality`) downloads a second, smaller rendition of each video —
+the one that fits a chat app's attachment limit, beside the one worth watching
+on a television. A media server shows two files in a season's folder as two
+episodes, so the small one is filed outside ``shows/`` altogether, under
+``small/``, in the same folders and by the same name. The record names it:
+``small`` is its path from the library's root, with forward slashes. It is a
+copy and nothing more — no record, picture or ``.nfo`` of its own — and it
+comes and goes with its item. A reader that wants the smaller file takes
+``small`` where a record has it and the file is there, and ``media`` otherwise;
+one that knows nothing of it reads the library as before.
 
 **A post with pictures in it has a body.** ``body`` is the item as it was
 written, in order: a list of ``{"type": "heading" | "text", "text": …}`` and
@@ -85,6 +99,10 @@ from .media import AUDIO, TEXT, VIDEO
 FORMAT = 1
 
 KIND_DIRS = {VIDEO: "shows", AUDIO: "podcasts", TEXT: "articles"}
+
+# Where the second, smaller copy of a video goes: beside the kinds' folders,
+# not in them, so that nothing reading a kind's folder for media comes across it.
+SMALL_DIR = "small"
 
 STATE_DIR = ".fetchit"
 STAGING_DIR = os.path.join(STATE_DIR, "staging")
@@ -316,6 +334,7 @@ def write_item(
     *,
     item_id: str,
     media: str | None = None,
+    small: str | None = None,
     image: str | None = None,
     body: list[dict] | None = None,
 ) -> str:
@@ -325,6 +344,8 @@ def write_item(
     picture — and are *moved* into the library, so they should be in its
     staging folder (see :func:`staging_dir`) for that to be a rename. Either may
     be missing: a text item has no media, and plenty of items have no picture.
+    ``small`` is the video's second, smaller copy, where it has one; it is
+    filed under ``small/`` and named in the record.
 
     ``body`` is the item's body with its files downloaded (each file block a
     ``path``); they are moved in the same way, as ``<stem>-1.jpg`` and so on.
@@ -349,6 +370,18 @@ def write_item(
                 tag_audio(staged_media, item, feed_title=parsed.title or cfg.name)
             moves.append((staged_media, placement.path(ext)))
             files["media"] = placement.stem + ext
+
+        if small and media:
+            ext = os.path.splitext(small)[1].lower() or ".bin"
+            staged = os.path.join(work, "small" + ext)
+            shutil.move(small, staged)
+            target = small_path(root, placement.path(ext))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            moves.append((staged, target))
+            files["small"] = os.path.relpath(target, root).replace(os.sep, "/")
+        else:
+            # Filed again without one: the copy it had before is not its copy now.
+            _unlink_small(root, _read_json(placement.path(RECORD_EXT)))
 
         if image:
             ext = os.path.splitext(image)[1].lower()
@@ -393,6 +426,41 @@ def write_item(
             os.replace(source, target)
 
     return placement.path(RECORD_EXT)
+
+
+def small_path(root: str, path: str) -> str:
+    """Where the smaller copy of the library file ``path`` goes: its place under ``small/``."""
+    kind_dir, _, rest = os.path.relpath(path, root).partition(os.sep)
+    return os.path.join(root, SMALL_DIR, rest)
+
+
+def _small_file(root: str, record: dict | None) -> str | None:
+    """The path of the smaller copy ``record`` names, if it names one inside ``small/``."""
+    named = record.get("small") if record else None
+    if not isinstance(named, str) or not named:
+        return None
+    base = os.path.realpath(os.path.join(root, SMALL_DIR))
+    path = os.path.realpath(os.path.join(root, *named.split("/")))
+    return path if path.startswith(base + os.sep) else None
+
+
+def _unlink_small(root: str, record: dict | None) -> None:
+    """Delete the smaller copy ``record`` names, and the folders that leaves empty."""
+    path = _small_file(root, record)
+    if path is None:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        return
+    base = os.path.realpath(os.path.join(root, SMALL_DIR))
+    folder = os.path.dirname(path)
+    while folder != base and folder.startswith(base + os.sep):
+        try:
+            os.rmdir(folder)
+        except OSError:
+            break
+        folder = os.path.dirname(folder)
 
 
 def _record(
@@ -676,7 +744,7 @@ def prune(root: str, keep_days: dict[str, int], *, default: int = 0, now: float 
     strange kind of library.
 
     The record goes first, so a reader stops seeing the item before its files
-    go; then its media, picture and ``.nfo``; then any season folder left
+    go; then its media and smaller copy, picture and ``.nfo``; then any season folder left
     empty. A feed's own files — ``feed.json``, its artwork — stay. Leftovers in
     staging from a run that was killed are cleared too. Best-effort
     throughout: a file that can't be deleted is skipped.
@@ -698,7 +766,7 @@ def prune(root: str, keep_days: dict[str, int], *, default: int = 0, now: float 
             for record in list(_walk_records(folder)):
                 if _fetched(record, record["_path"]) >= cutoff:
                     continue
-                if _remove_item(record):
+                if _remove_item(record, root):
                     removed += 1
             _drop_empty_seasons(folder)
     _clear_staging(root, now)
@@ -708,10 +776,12 @@ def prune(root: str, keep_days: dict[str, int], *, default: int = 0, now: float 
 def remove_items(root: str, feed: str, ids: set[str]) -> list[dict]:
     """Delete ``feed``'s items whose ``id`` is in ``ids``, as pruning does.
 
-    Record first, then media, picture and ``.nfo``, then any season folder
+    Record first, then media, its smaller copy, picture and ``.nfo``, then any season folder
     left empty. Returns the records of the items that went.
     """
-    removed = [r for r in records(root, feed) if r.get("id") in ids and _remove_item(r)]
+    removed = [
+        r for r in records(root, feed) if r.get("id") in ids and _remove_item(r, root)
+    ]
     if removed:
         for _kind, folder in feed_folders(root, feed):
             _drop_empty_seasons(folder)
@@ -728,7 +798,7 @@ def _fetched(record: dict, path: str) -> float:
             return time.time()
 
 
-def _remove_item(record: dict) -> bool:
+def _remove_item(record: dict, root: str) -> bool:
     path = record["_path"]
     folder = os.path.dirname(path)
     stem = os.path.basename(path)[: -len(RECORD_EXT)]
@@ -744,6 +814,7 @@ def _remove_item(record: dict) -> bool:
             os.unlink(os.path.join(folder, os.path.basename(str(name))))
         except OSError:
             pass
+    _unlink_small(root, record)
     return True
 
 

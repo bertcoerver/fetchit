@@ -89,3 +89,29 @@ def test_parse_quality_null_switches_a_limit_off():
 def test_parse_quality_rejects_nonsense(raw):
     with pytest.raises(ValueError, match="feeds\\[0\\] quality"):
         parse_quality(raw, "feeds[0]")
+
+
+# --- a second, smaller copy -------------------------------------------------
+
+
+def test_small_is_a_quality_of_its_own_no_taller_than_the_main_copy():
+    quality = parse_quality({"max_height": 720, "small": {"part_size_mb": 95}}, "x")
+    assert quality.small == Quality(max_height=720, part_bytes=95 * MB)
+    assert quality.part_bytes is None
+
+
+def test_a_feed_changes_the_librarys_small_copy_key_by_key_or_switches_it_off():
+    base = parse_quality({"small": {"part_size_mb": 95}}, "config")
+    assert parse_quality(None, "x", base).small == base.small
+    assert parse_quality({"small": {"max_parts": 2}}, "x", base).small == Quality(
+        part_bytes=95 * MB, max_parts=2
+    )
+    assert parse_quality({"small": None}, "x", base).small is None
+
+
+@pytest.mark.parametrize(
+    "raw", ["360p", {"part_size_mb": 0}, {"small": {"part_size_mb": 95}}, {"size": 95}]
+)
+def test_small_rejects_nonsense_and_a_small_copy_of_its_own(raw):
+    with pytest.raises(ValueError, match="feeds\\[0\\] quality.small"):
+        parse_quality({"small": raw}, "feeds[0]")

@@ -506,3 +506,36 @@ def test_a_file_cut_short_counts_as_a_failure(clock, site, monkeypatch, tmp_path
         downloadgemist.fetch(lookup, "360p", str(tmp_path), timeout=900)
 
     assert cache.get("downloadgemist_failed", EPISODE)["count"] == 1
+
+
+# --- an episode at two qualities --------------------------------------------
+
+
+def test_an_episodes_second_file_follows_its_first_and_the_wait_adds_up(clock, site, tmp_path):
+    lookup = downloadgemist.streams(EPISODE)
+    (tmp_path / "small").mkdir()
+    with downloadgemist.one_visit():
+        downloadgemist.fetch(lookup, "360p", str(tmp_path / "small"), timeout=900)
+        downloadgemist.fetch(lookup, "1080p", str(tmp_path), timeout=900)
+
+    assert len(site.downloads) == 2
+    # Each file under a session of its own.
+    assert site.modes() == ["get_streams", "download_stream", "get_streams", "download_stream"]
+    assert downloadgemist.wait_left() == pytest.approx(2 * 1517)
+
+
+def test_another_episode_waits_even_within_a_visit(clock, site, tmp_path):
+    lookup = downloadgemist.streams(EPISODE)
+    other = downloadgemist.streams(OTHER)
+    with downloadgemist.one_visit():
+        downloadgemist.fetch(lookup, "360p", str(tmp_path), timeout=900)
+        with pytest.raises(FeedError, match="min left"):
+            downloadgemist.fetch(other, "360p", str(tmp_path), timeout=900)
+
+
+def test_the_same_episode_waits_once_the_visit_is_over(clock, site, tmp_path):
+    lookup = downloadgemist.streams(EPISODE)
+    with downloadgemist.one_visit():
+        downloadgemist.fetch(lookup, "360p", str(tmp_path), timeout=900)
+    with pytest.raises(FeedError, match="min left"):
+        downloadgemist.fetch(lookup, "1080p", str(tmp_path), timeout=900)

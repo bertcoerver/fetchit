@@ -408,14 +408,28 @@ it is going, so it is a setting, for the library and per feed:
 | `max_height` | `1080` | The tallest picture worth having. `null` for no limit. |
 | `part_size_mb` | off | Switches to rssignal's rule: **the fewest parts of this size possible, then the best quality that fits in that many.** `95` for a feed that is also sent to Signal, which refuses attachments over 100 MB. |
 | `max_parts` | `4` | With `part_size_mb`: a video needing more parts than this isn't downloaded at all. |
+| `small` | off | A second, smaller copy of every video: an object of the three keys above. `null` in a feed switches off what the library set. |
 
 The choice is made before downloading, from each source's own size estimates, and
 `fetchit run --dry-run` shows it. The picture is never re-encoded: streams are
 copied (H.264 and AAC, which every player handles).
 
-A feed that goes to both Jellyfin and Signal has to pick one: the sharpest picture,
-which rssignal then sends in more parts, or a picture that fits Signal, which
-Jellyfin shows as it is.
+A feed that goes to both Jellyfin and Signal gets a copy for each:
+
+```json
+"quality": {"max_height": 1080, "small": {"part_size_mb": 95}}
+```
+
+The video is then downloaded twice: the sharpest picture into `shows/`, where
+Jellyfin shows it, and the best one that fits Signal into `small/`, where
+Jellyfin never looks. rssignal and db-podcast take the small copy where an item
+has one. `small` starts from the main copy's `max_height` and is chosen by the
+same rules, so where both arrive at the same rendition — a short video that fits
+Signal at 1080p — there is one download and one file. A video whose smallest
+rendition is over the small copy's `max_parts` is downloaded without one. It
+costs the disk, and the source, a second download: of an NPO episode
+Downloadgemist is asked for both files in one go, and left alone for twice the
+episode's length afterwards.
 
 ## The library
 
@@ -431,6 +445,12 @@ The layout is the contract between fetchit and whatever reads it.
   `episode` for a video, `number` where the source numbers its episodes, `duration`
   in seconds, `author`, `categories`, `fetched`, and `fields` — every field the
   source gave, as the strings a filter sees.
+- **A video may have a smaller copy** (`quality.small`). It is filed outside
+  `shows/`, as `small/<Feed>/Season …/<the same name>`, because a media server
+  shows two files in a season's folder as two episodes. The record's `small` is
+  its path from the library's root. It has no record or picture of its own and
+  is pruned with its item. A reader that wants the smaller file takes `small`
+  where a record has it, and `media` otherwise.
 - **A post with pictures in it has a `body`**: the item as it was written, a list of
   `{"type": "heading" | "text", "text": …}` and `{"type": "image" | "video" |
   "audio", "file": …}` in order, each `file` a name beside the record
@@ -462,7 +482,9 @@ The layout is the contract between fetchit and whatever reads it.
 Add two libraries: one of type **Shows** pointing at `<library>/shows`, and one of
 type **Music** pointing at `<library>/podcasts`. Keep **Nfo** enabled as a metadata
 reader for the first. Folders starting with a dot are ignored, so `.fetchit` never
-shows up.
+shows up, and `small/` is beside the two libraries rather than in them. (Jellyfin
+groups several versions of a film into one, but not of an episode, which is why
+the small copies are kept out of its way.)
 
 ## Development
 

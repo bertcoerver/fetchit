@@ -95,6 +95,10 @@ class NpoPlan:
     estimated_bytes: int
     parts: int = 1
 
+    @property
+    def rendition(self) -> str:
+        return self.rung.label
+
     def describe(self) -> str:
         mb = self.estimated_bytes / (1024 * 1024)
         return f"{self.rung.label}, ~{mb:.0f} MB{in_parts(self.parts)}"
