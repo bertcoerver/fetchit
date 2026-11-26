@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- Refuse a download that stopped short of its announced length
+
 ## 0.4.2
 
 - Save an Invidious link as the YouTube video it shows
