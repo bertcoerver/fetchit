@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- Save an Invidious link as the YouTube video it shows
+
 ## 0.4.1
 
 - Save a link for later from a phone's share sheet
