@@ -69,3 +69,6 @@ library/
 # OS
 .DS_Store
 Thumbs.db
+
+# Built by shortcuts/build.py
+*.shortcut

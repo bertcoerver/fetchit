@@ -85,10 +85,14 @@ To save from a phone's share sheet instead, three things:
 2. Under **Network**, give port 8099 a number (8099 will do) and restart the
    add-on. Only saving a link is answered there, and only with the token; the
    panel stays behind Home Assistant.
-3. Add the shortcut
-   [Save for later](https://github.com/bertcoerver/fetchit/raw/main/shortcuts/Save%20for%20later.shortcut)
-   on the phone. It asks for the address (`http://<Home Assistant>:8099`), the
-   token and the name of your home Wi-Fi.
+3. Build the shortcut **Save for later** with `python shortcuts/build.py`
+   from [fetchit's repository](https://github.com/bertcoerver/fetchit) (on a
+   Mac, which signs it) and add it on the phone. It asks for the address, the
+   token and the name of your home Wi-Fi. Give the address as Home Assistant's
+   IP address (`http://<IP address>:8099`), not `homeassistant.local`: that
+   name also
+   leads to IPv6 addresses, which the phone tries first and where the port is
+   not published, and the shortcut fails with "the network connection was lost".
 
 Share a video's page to **Save for later** and it is downloaded. Away from
 home the link waits on the phone; to have waiting links sent when you come

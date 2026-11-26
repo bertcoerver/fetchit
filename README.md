@@ -314,14 +314,14 @@ among them are saved and fetched at once; anything else — a channel, a page
 fetchit doesn't read — is named in `refused` and stops nothing. `message` says
 what happened in one line.
 
-[`shortcuts/Save for later.shortcut`](shortcuts/Save%20for%20later.shortcut) is
-an Apple Shortcut that calls it: share a page to it from Safari or YouTube.
+`shortcuts/Save for later.shortcut` is an Apple Shortcut that calls it: share a page to it from Safari or YouTube.
 Adding it asks for fetchit's address, the token and the name of your home
 Wi-Fi. Away from that Wi-Fi the link waits in a queue on the phone, and the
 next time the shortcut runs at home it sends everything that is waiting. To
 have that happen by itself, make an automation in the Shortcuts app: **When**
 Wi-Fi, your network, *Run Immediately*; **Do** Run Shortcut, *Save for later*.
-It is built by `python shortcuts/build.py` (on a Mac, which signs it).
+It is not kept in the repository: build it with `python shortcuts/build.py`
+(on a Mac, which signs it).
 
 The GUI shows every link list as a tab: its links, a box to paste new ones,
 **Add and download**. Its last tab, **New list**, makes a feed: the name and the

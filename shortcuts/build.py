@@ -132,8 +132,11 @@ def build() -> dict:
         "Saves the shared link in fetchit's \"Saved for later\". Away from home the link waits in a queue; "
         "run without a link (from a Wi-Fi automation) this sends what is waiting.\n\n"
         "The three texts below: fetchit's address, its save_token, and the name of the home Wi-Fi."))
-    server = s.setting("Server", "The address of fetchit: http://<Home Assistant>:<the port set under the "
-                       "add-on's Network>", "http://homeassistant.local:8099")
+    # An IP address, not homeassistant.local: that name also answers with IPv6
+    # addresses, which a phone tries first, and Home Assistant publishes an
+    # add-on's port on IPv4 only — iOS then says "the network connection was lost".
+    server = s.setting("Server", "The address of fetchit: http://<Home Assistant's IP address>:<the port set "
+                       "under the add-on's Network>", "http://<IP address>:8099")
     token = s.setting("Token", "The save_token set in the fetchit add-on's configuration", "")
     home = s.setting("Home Wi-Fi", "The name of your home Wi-Fi. Links wait until you are on it.", "")
 
