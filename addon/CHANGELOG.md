@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Give yt-dlp a JavaScript runtime for signed-in YouTube sessions
+
 ## 0.2.0
 
 - Read a school blog on e-Primo, signed in through ÉduConnect
