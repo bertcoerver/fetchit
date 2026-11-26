@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- Fetch a saved link again when it is taken out and put back
+- Have the Save for later shortcut built locally, and reached by IP address
+
 ## 0.4.3
 
 - Refuse a download that stopped short of its announced length
