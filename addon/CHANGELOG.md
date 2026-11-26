@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5
+
+- Delete a saved video's files when its link is removed
+
 ## 0.4.4
 
 - Fetch a saved link again when it is taken out and put back
