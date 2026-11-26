@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- Save single videos for later, in a link list of their own
+
 ## 0.2.1
 
 - Give yt-dlp a JavaScript runtime for signed-in YouTube sessions
