@@ -37,6 +37,11 @@ FETCHIT_NOTIFY="$(jq -r '(.notify // []) | join(",")' /data/options.json)"
 FETCHIT_NOTIFY_TOKEN="$(jq -r '.notify_token // ""' /data/options.json)"
 export FETCHIT_NOTIFY FETCHIT_NOTIFY_TOKEN
 
+# What a phone's shortcut sends to save a link for later (POST /api/save), the
+# one request answered outside the panel. Empty: off.
+FETCHIT_SAVE_TOKEN="$(jq -r '.save_token // ""' /data/options.json)"
+export FETCHIT_SAVE_TOKEN
+
 # The e-Primo session, for a school blog behind ÉduConnect: made by signing in
 # from the panel, and kept on the add-on's own volume, not beside the config.
 export FETCHIT_EPRIMO_SESSION="/data/eprimo-session.json"

@@ -444,3 +444,54 @@ def test_signing_in_from_the_panel_keeps_no_password(running, tmp_path, monkeypa
     status, box = _call(base, "/api/eprimo/login", {"username": "p.nom12", "password": "s3cret"})
     assert (status, box["signed_in"], seen) == (200, "2026-11-25T15:16:00+00:00", ["p.nom12"])
     assert "s3cret" not in json.dumps(list(service.activity))
+
+
+def _save(base, body, token=None):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = Request(base + "/api/save", data=json.dumps(body).encode(), headers=headers)
+    try:
+        with urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read())
+    except HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
+def test_a_shortcut_saves_links_with_the_token_and_nothing_else(running, tmp_path, monkeypatch):
+    start, _ = running
+    ran = []
+    monkeypatch.setattr(server, "run", lambda config, *, dry_run=False, only=None: ran.append(only) or Summary())
+    # Not the GUI's address: only the token opens anything, and only saving.
+    base, _ = start(gui_from="10.9.9.9", save_token="s3cret")
+    video = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    episode = "https://npo.nl/start/afspelen/hijskraan_1"
+    channel = "https://www.youtube.com/@talks"
+
+    assert _save(base, {"links": video})[0] == 403
+    assert _save(base, {"links": video}, token="wrong")[0] == 403
+    assert _call(base, "/api/status")[0] == 403
+
+    # A queue as a shortcut keeps it: one text, a link a line, whatever was shared.
+    status, answer = _save(base, {"links": f"-\nhttps://youtu.be/dQw4w9WgXcQ?si=abc\n{channel}\n\n{episode}\n"},
+                           token="s3cret")
+    assert status == 200, answer
+    assert answer == {"feed": "Saved for later", "added": [video, episode], "already": 0, "refused": [channel],
+                      "message": f"Saved 2 links for later. Not one video fetchit can read: {channel}."}
+    assert (tmp_path / "lists" / "saved-for-later.txt").read_text() == f"{video}\n{episode}\n"
+    for _ in range(200):
+        if ran:
+            break
+        time.sleep(0.02)
+    assert ran == [["Saved for later"]]
+
+    status, answer = _save(base, {"links": [video]}, token="s3cret")
+    assert status == 200 and answer["message"] == "1 link already saved."
+    assert _save(base, {"links": "nothing here"}, token="s3cret")[0] == 422
+
+
+def test_saving_is_off_without_a_token(running):
+    start, _ = running
+    base, _ = start(gui_from="10.9.9.9")
+    status, answer = _save(base, {"links": "https://youtu.be/dQw4w9WgXcQ"}, token="")
+    assert status == 403 and "no save token" in answer["error"]

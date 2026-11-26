@@ -77,6 +77,22 @@ into a feed of that name, made with the first link and kept for good. A saved
 video is dated the moment it was saved rather than the day it went up, so the
 feed reads in the order things were put in it.
 
+To save from a phone's share sheet instead, three things:
+
+1. Set a **save_token** in the add-on's configuration — any long random text.
+2. Under **Network**, give port 8099 a number (8099 will do) and restart the
+   add-on. Only saving a link is answered there, and only with the token; the
+   panel stays behind Home Assistant.
+3. Add the shortcut
+   [Save for later](https://github.com/bertcoerver/fetchit/raw/main/shortcuts/Save%20for%20later.shortcut)
+   on the phone. It asks for the address (`http://<Home Assistant>:8099`), the
+   token and the name of your home Wi-Fi.
+
+Share a video's page to **Save for later** and it is downloaded. Away from
+home the link waits on the phone; to have waiting links sent when you come
+back, make an automation in the Shortcuts app: **When** Wi-Fi, your network,
+*Run Immediately*; **Do** Run Shortcut, *Save for later*.
+
 **e-Primo** appears when a feed is a school's blog on e-Primo
 (`https://ent.e-primo.fr/blog/id/…`), which is read as you. Give it your
 ÉduConnect identifier and password and **Sign in**: the password is used for

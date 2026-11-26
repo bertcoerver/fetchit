@@ -31,6 +31,14 @@ ingress_port: 8099
 panel_icon: mdi:download-network
 panel_title: fetchit
 
+# Off unless you give it a number under Network: the one door for something
+# that is not signed in to Home Assistant — a phone's shortcut saving a link
+# for later. Only POST /api/save is answered there, and only with `save_token`.
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Save a link for later from a shortcut (needs save_token)
+
 map:
   # -> /config in the container. fetchit.json lives here, so it can be edited
   #    with the File Editor or over Samba without rebuilding the image. So does
@@ -50,6 +58,7 @@ options:
   update_yt_dlp: true
   notify: []
   notify_token: ""
+  save_token: ""
   log_level: info
 
 schema:
@@ -75,4 +84,8 @@ schema:
     - url
   # Sent along as `Authorization: Bearer <token>`: rssignal's `api_token`.
   notify_token: password?
+  # What a shortcut sends, as `Authorization: Bearer <token>`, to save a link
+  # for later: http://<this machine>:<the port under Network>/api/save. Empty
+  # turns that off. See the documentation tab.
+  save_token: password?
   log_level: list(trace|debug|info|warning|error|fatal)

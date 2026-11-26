@@ -9,12 +9,18 @@ Only one job runs at a time; asking for a second while one is going shows the
 one that is going. The GUI answers only the addresses in :data:`GUI_FROM_ENV`:
 this machine by default, Home Assistant's ingress proxy in the add-on, which
 has checked who you are before a request gets here.
+
+One request is answered from anywhere, for whoever sends the token in
+:data:`SAVE_TOKEN_ENV`: ``POST /api/save``, which puts the link of a video in
+the "Saved for later" list. It is what a phone's share sheet calls, and a phone
+is not signed in to Home Assistant's panel. See :meth:`Service.save`.
 """
 
 from __future__ import annotations
 
 import io
 import hashlib
+import hmac
 import ipaddress
 import json
 import os
@@ -50,6 +56,10 @@ DEFAULT_PORT = 8099
 SCHEDULE_ENV = "FETCHIT_SCHEDULE"
 GUI_FROM_ENV = "FETCHIT_GUI_FROM"
 UPDATE_YT_DLP_ENV = "FETCHIT_UPDATE_YT_DLP"
+SAVE_TOKEN_ENV = "FETCHIT_SAVE_TOKEN"
+
+# The list POST /api/save adds to unless it names another; the panel's first tab.
+SAVED_FEED = "Saved for later"
 
 # What the daily upgrade installs: yt-dlp with the extras fetchit[video] asks
 # for, so the challenge solver pinned to each release moves along with it.
@@ -183,12 +193,14 @@ class Service:
         schedule: list[tuple[int, int]] | None = None,
         gui_from: str = DEFAULT_FROM,
         update_yt_dlp: bool = False,
+        save_token: str | None = None,
     ) -> None:
         self.config_file = config_path(config_file)
         self.library = library
         self.schedule = schedule or []
         self.gui_from = parse_networks(gui_from)
         self.update_yt_dlp = update_yt_dlp
+        self.save_token = save_token or None
         self.activity: deque[dict] = deque(maxlen=100)
         self.jobs: dict[str, Job] = {}
         self._order: deque[str] = deque()
@@ -698,11 +710,64 @@ class Service:
         self._links_changed(name, f"{len(removed)} link(s) removed.", removed)
         return {"feed": name, "removed": removed}
 
+    def save(self, links, feed: str | None = None) -> dict:
+        """Save the single videos among ``links`` for later, and fetch them now.
+
+        For a caller that is not the panel — a shortcut on a phone, sending
+        what was shared with it, perhaps days ago and several at once. So it
+        takes what it is given, a list of links or one text with links in it,
+        and no link stops another: those that are not one video fetchit reads
+        are named in ``refused`` and the rest are saved. Only single videos —
+        a channel shared by mistake would otherwise be followed whole.
+
+        ``message`` says what happened in a line fit to show as it is. The run
+        for the feed is started here; if another job is going, the new links
+        wait for the next run.
+        """
+        from .saved import canonical, item_source
+
+        if isinstance(links, str):
+            links = _LINK.findall(links)
+        elif isinstance(links, list):
+            links = [found for link in links if isinstance(link, str) for found in _LINK.findall(link)]
+        else:
+            links = []
+        links = list(dict.fromkeys(canonical(link.rstrip(".,;)")) for link in links))
+        if not links:
+            raise ConfigError("No links to save.")
+        name = feed.strip() if isinstance(feed, str) and feed.strip() else SAVED_FEED
+        wanted = [link for link in links if item_source(link)]
+        refused = [link for link in links if link not in wanted]
+
+        answer = {"feed": name, "added": [], "already": 0, "refused": refused}
+        if wanted:
+            done = self.add_links(name, wanted)
+            answer.update(added=done["added"], already=done["already"])
+            if done["added"]:
+                self.run(only=[name])
+        parts = []
+        if answer["added"]:
+            parts.append(f"Saved {_count(len(answer['added']))} for later.")
+        if answer["already"]:
+            parts.append(f"{_count(answer['already'])} already saved.")
+        if refused:
+            parts.append(f"Not one video fetchit can read: {', '.join(refused)}.")
+        answer["message"] = " ".join(parts)
+        return answer
+
     def _links_changed(self, name: str, text: str, which: list[str]) -> None:
         if not which:
             return
         self.activity.appendleft({"when": _iso(time.time()), "kind": "links", "text": f"{name}: {text}", "ok": True})
         log_line(f"links of {name} changed from the panel: {text}")
+
+
+# A web address in a text of them: what a share sheet hands over, one a line.
+_LINK = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _count(n: int) -> str:
+    return "1 link" if n == 1 else f"{n} links"
 
 
 # Where the panel puts the link list of a feed it makes, beside the config.
@@ -855,6 +920,33 @@ class Handler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.FORBIDDEN, {"error": "The GUI is not open to this address."})
         return False
 
+    def _may_save(self) -> bool:
+        """Whether this request may save a link: it has the token, or the GUI's address."""
+        token = self.service.save_token
+        given = self.headers.get("Authorization", "")
+        if token and hmac.compare_digest(given.encode(), f"Bearer {token}".encode()):
+            return True
+        if allowed(self.client_address[0], self.service.gui_from):
+            return True
+        log_line(f"serve: refused a save from {self.client_address[0]} — "
+                 + ("wrong or no token." if token else "no save token is set."))
+        self._json(HTTPStatus.FORBIDDEN, {"error": "Saving needs the save token." if token
+                                          else "Saving is off: no save token is set."})
+        return False
+
+    def _save(self) -> None:
+        if not self._may_save():
+            return
+        body = self._body()
+        try:
+            self._json(HTTPStatus.OK, self.service.save(body.get("links"), body.get("feed")))
+        except ConfigConflict as exc:
+            self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+        except (FeedError, ValueError, TypeError) as exc:
+            self._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": _untemp(str(exc))})
+        except OSError as exc:
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"Could not save: {exc}"})
+
     def _body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -910,6 +1002,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(exc)})
 
     def do_POST(self) -> None:  # noqa: N802 - the stdlib's name
+        # Typed into a shortcut by hand, the address may end in a slash of its own.
+        if self.path.split("?")[0].strip("/") == "api/save":
+            self._save()
+            return
         if not self._allowed():
             return
         path = urlsplit(self.path).path.rstrip("/")
@@ -988,6 +1084,7 @@ def serve(
         schedule=parse_schedule(os.environ.get(SCHEDULE_ENV, "")),
         gui_from=os.environ.get(GUI_FROM_ENV, "").strip() or DEFAULT_FROM,
         update_yt_dlp=os.environ.get(UPDATE_YT_DLP_ENV, "").strip().lower() in {"1", "true", "yes"},
+        save_token=os.environ.get(SAVE_TOKEN_ENV, "").strip() or None,
     )
     try:
         server = make_server(service, host, port)

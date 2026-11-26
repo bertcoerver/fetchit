@@ -293,6 +293,32 @@ A saved video differs from the same video read off its channel in a few ways:
 Like any feed, a saved list files its items in order: a download that fails
 stops the list for that run, and the next run starts with it.
 
+#### From a phone's share sheet
+
+`fetchit serve` answers one request from outside its GUI's addresses, for
+whoever sends the token in `$FETCHIT_SAVE_TOKEN` (the add-on's `save_token`;
+unset, it is off):
+
+```sh
+curl -X POST http://<host>:8099/api/save \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"links": "https://youtu.be/dQw4w9WgXcQ"}'
+```
+
+`links` is a list of links or one text with links in it. The single videos
+among them are saved and fetched at once; anything else — a channel, a page
+fetchit doesn't read — is named in `refused` and stops nothing. `message` says
+what happened in one line.
+
+[`shortcuts/Save for later.shortcut`](shortcuts/Save%20for%20later.shortcut) is
+an Apple Shortcut that calls it: share a page to it from Safari or YouTube.
+Adding it asks for fetchit's address, the token and the name of your home
+Wi-Fi. Away from that Wi-Fi the link waits in a queue on the phone, and the
+next time the shortcut runs at home it sends everything that is waiting. To
+have that happen by itself, make an automation in the Shortcuts app: **When**
+Wi-Fi, your network, *Run Immediately*; **Do** Run Shortcut, *Save for later*.
+It is built by `python shortcuts/build.py` (on a Mac, which signs it).
+
 The GUI shows every link list as a tab: its links, a box to paste new ones,
 **Add and download**. Its last tab, **New list**, makes a feed: the name and the
 first links, which go into `lists/<name>.txt`. Naming a feed that lists its
