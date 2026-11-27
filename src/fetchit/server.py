@@ -455,8 +455,10 @@ class Service:
                         pass
             newest = max(found, key=lambda r: str(r.get("published") or ""), default=None)
             q = cfg.quality
-            quality = (f"≤{q.max_height}p" if q.max_height else "best") + (
-                f", {q.part_bytes // (1024 * 1024)} MB parts" if q.part_bytes else ""
+            quality = (
+                (f"≤{q.max_height}p" if q.max_height else "best")
+                + (f", ≥{q.min_height}p" if q.min_height else "")
+                + (f", {q.part_bytes // (1024 * 1024)} MB parts" if q.part_bytes else "")
             )
             after = state.after(cfg.name)
             out.append({

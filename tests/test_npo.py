@@ -1,5 +1,6 @@
 """Tests for fetchit.npo (the page and Downloadgemist are faked — no network)."""
 
+from dataclasses import replace
 import json
 import re
 from datetime import datetime, timezone
@@ -347,7 +348,10 @@ def test_resolve_refuses_what_no_parts_can_hold(monkeypatch):
     _patch_streams(monkeypatch, _lookup(duration=6 * 60 * 60))
 
     with pytest.raises(VideoTooBig, match="bureau-buitenland_825"):
-        npo.resolve(FeedItem(title="t", description="", link=EPISODE_LINK), quality=BUDGET)
+        npo.resolve(
+            FeedItem(title="t", description="", link=EPISODE_LINK),
+            quality=replace(BUDGET, max_parts=4),
+        )
 
 
 def test_resolve_needs_some_video(monkeypatch):

@@ -83,9 +83,63 @@ def test_parse_quality_null_switches_a_limit_off():
         {"max_height": 0},
         {"part_size_mb": -1},
         {"part_size_mb": True},
-        {"max_parts": None},
+        {"max_parts": 0},
     ],
 )
 def test_parse_quality_rejects_nonsense(raw):
+    with pytest.raises(ValueError, match="feeds\\[0\\] quality"):
+        parse_quality(raw, "feeds[0]")
+
+
+# --- a floor under the picture ---------------------------------------------
+
+LONG = [(216, 60), (360, 130), (720, 300), (1080, 700)]
+
+
+def test_a_floor_costs_parts_rather_than_picture():
+    floor = Quality(max_height=1080, min_height=360, part_bytes=95 * MB)
+    assert _choose(floor) == ((360, 45), 1)
+    # 360p needs two parts, and in two parts nothing better fits.
+    assert _choose(floor, LONG) == ((360, 130), 2)
+    # Without the floor the same video would have gone down to 216p for one.
+    assert _choose(Quality(part_bytes=95 * MB), LONG) == ((216, 60), 1)
+
+
+def test_within_the_parts_the_floor_asks_for_the_best_is_taken():
+    rungs = [(216, 60), (360, 100), (540, 180), (720, 300)]
+    assert _choose(Quality(min_height=360, part_bytes=95 * MB), rungs) == ((540, 180), 2)
+
+
+def test_a_floor_above_everything_takes_the_tallest():
+    assert _choose(Quality(min_height=720, part_bytes=95 * MB), [(216, 20), (360, 45)]) == ((360, 45), 1)
+
+
+def test_a_floor_alone_changes_nothing():
+    assert _choose(Quality(min_height=360)) == ((1080, 260), 1)
+
+
+def test_however_many_parts_unless_max_parts_says_otherwise():
+    rungs = [(360, 500)]
+    assert _choose(Quality(part_bytes=95 * MB), rungs) == ((360, 500), 6)
+    assert _choose(Quality(part_bytes=95 * MB, max_parts=4), rungs) is None
+
+
+def test_parse_quality_reads_the_floor():
+    quality = parse_quality({"max_height": 1080, "min_height": 360, "part_size_mb": 95}, "x")
+    assert quality == Quality(max_height=1080, min_height=360, part_bytes=95 * MB)
+    assert parse_quality({"part_size_mb": None, "min_height": None}, "x", quality) == Quality()
+    assert parse_quality({"max_parts": None}, "x", Quality(max_parts=4)).max_parts is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"min_height": 1440},
+        {"min_height": "360"},
+        {"try_smaller_than_mb": 95},
+        {"small": {"part_size_mb": 95}},
+    ],
+)
+def test_parse_quality_rejects_a_floor_that_makes_no_sense_and_keys_it_does_not_know(raw):
     with pytest.raises(ValueError, match="feeds\\[0\\] quality"):
         parse_quality(raw, "feeds[0]")

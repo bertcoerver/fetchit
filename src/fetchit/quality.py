@@ -9,6 +9,11 @@ for the whole library:
 ``max_height``
     The tallest picture worth having, 1080 by default. A source with nothing
     that short offers its shortest instead.
+``min_height``
+    Off by default. The shortest picture worth having: a size limit below never
+    takes the picture under this — with ``part_size_mb`` that means more parts
+    rather than a worse picture. A source with nothing that tall offers its
+    tallest instead.
 ``part_size_mb``
     Off by default. Set, it switches to rssignal's rule — **the fewest parts of
     this size possible, then the best quality that fits in that many** — for a
@@ -18,8 +23,10 @@ for the whole library:
     splits into as few as it can.
 ``max_parts``
     With ``part_size_mb``, the most parts worth having: a video whose smallest
-    rendition needs more is not downloaded at all. 4 by default — about 380 MB
-    at 95 MB a part, which is a two-hour documentary at 360p.
+    rendition needs more is not downloaded at all. Off by default: a feed that
+    is watched too wants the long ones as much as the short. For a feed that
+    only goes to Signal, ``4`` (about 380 MB at 95 MB a part, a two-hour
+    documentary at 360p) is as many as rssignal sends.
 
 Sizes are each source's own estimates — exact where it reports a file size,
 bitrate times duration where it doesn't — so they are decided before
@@ -38,9 +45,8 @@ T = TypeVar("T")
 MB = 1024 * 1024
 
 DEFAULT_MAX_HEIGHT = 1080
-DEFAULT_MAX_PARTS = 4
 
-QUALITY_KEYS = ("max_height", "part_size_mb", "max_parts")
+QUALITY_KEYS = ("max_height", "min_height", "part_size_mb", "max_parts")
 
 
 @dataclass(frozen=True)
@@ -48,12 +54,14 @@ class Quality:
     """How to choose between the renditions of a video. See the module docstring.
 
     ``part_bytes`` is ``part_size_mb`` in bytes, or ``None`` for no size budget.
-    ``max_height`` ``None`` means no cap at all.
+    ``max_height`` ``None`` means no cap at all, ``min_height`` ``None`` no
+    floor. ``max_parts`` ``None`` means any number of parts.
     """
 
     max_height: int | None = DEFAULT_MAX_HEIGHT
     part_bytes: int | None = None
-    max_parts: int = DEFAULT_MAX_PARTS
+    max_parts: int | None = None
+    min_height: int | None = None
 
 
 def parse_quality(raw: object, where: str, base: Quality = Quality()) -> Quality:
@@ -61,7 +69,7 @@ def parse_quality(raw: object, where: str, base: Quality = Quality()) -> Quality
 
     Keys left out keep ``base``'s value, so a feed can override one setting of
     the library-wide default without restating the others. ``null`` for
-    ``max_height`` or ``part_size_mb`` switches that limit off.
+    any of the limits switches it off.
     """
     if raw is None:
         return base
@@ -80,23 +88,38 @@ def parse_quality(raw: object, where: str, base: Quality = Quality()) -> Quality
     if "max_height" in raw:
         max_height = _whole(raw["max_height"], f"{where} quality.max_height", nullable=True)
 
-    part_bytes = base.part_bytes
-    if "part_size_mb" in raw:
-        value = raw["part_size_mb"]
-        if value is None:
-            part_bytes = None
-        elif isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-            raise ValueError(
-                f"{where} quality.part_size_mb must be a positive number of MB, or null."
-            )
-        else:
-            part_bytes = int(value * MB)
+    min_height = base.min_height
+    if "min_height" in raw:
+        min_height = _whole(raw["min_height"], f"{where} quality.min_height", nullable=True)
+    if min_height is not None and max_height is not None and min_height > max_height:
+        raise ValueError(
+            f"{where} quality.min_height ({min_height}) is above max_height ({max_height})."
+        )
+
+    part_bytes = _megabytes(raw, "part_size_mb", where, base.part_bytes)
 
     max_parts = base.max_parts
     if "max_parts" in raw:
-        max_parts = _whole(raw["max_parts"], f"{where} quality.max_parts")
+        max_parts = _whole(raw["max_parts"], f"{where} quality.max_parts", nullable=True)
 
-    return Quality(max_height=max_height, part_bytes=part_bytes, max_parts=max_parts)
+    return Quality(
+        max_height=max_height,
+        part_bytes=part_bytes,
+        max_parts=max_parts,
+        min_height=min_height,
+    )
+
+
+def _megabytes(raw: dict, key: str, where: str, default: int | None) -> int | None:
+    """``raw[key]`` MB in bytes; ``default`` if it is not there, ``None`` for null."""
+    if key not in raw:
+        return default
+    value = raw[key]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError(f"{where} quality.{key} must be a positive number of MB, or null.")
+    return int(value * MB)
 
 
 def _whole(value: object, what: str, *, nullable: bool = False) -> int | None:
@@ -127,10 +150,10 @@ def choose(
     ``height`` is the picture's height in pixels (0 for one that doesn't say,
     which no cap rules out).
 
-    Without a size budget the answer is the best candidate under the height cap,
-    in one part. With one it is the fewest parts any of those fits in, then the
-    best that fits in that many. ``None`` means even the smallest needs more
-    than ``max_parts``; the caller says why in its own words, since it knows
+    Without a size limit the answer is the best candidate between the heights,
+    in one part. With a part size it is the fewest parts any of them fits in, then
+    the best that fits in that many. ``None`` means even the smallest needs more
+    than ``max_parts``, where that is set; the caller says why in its own words, since it knows
     what the candidates were.
     """
     if not candidates:
@@ -144,12 +167,20 @@ def choose(
             lowest = min(height(c) for c in pool)
             under = [c for c in pool if height(c) == lowest]
         pool = under
+    if quality.min_height is not None:
+        # A picture that doesn't say how tall it is (0) is not ruled out, as above.
+        over = [c for c in pool if height(c) == 0 or height(c) >= quality.min_height]
+        if not over:
+            # Nothing that tall: the next best thing is the tallest there is.
+            highest = max(height(c) for c in pool)
+            over = [c for c in pool if height(c) == highest]
+        pool = over
 
     if quality.part_bytes is None:
         return max(pool, key=rank), 1
 
     parts = parts_needed(min(size(c) for c in pool), quality.part_bytes)
-    if parts > quality.max_parts:
+    if quality.max_parts is not None and parts > quality.max_parts:
         return None
     budget = parts * quality.part_bytes
     fitting = [c for c in pool if size(c) <= budget]

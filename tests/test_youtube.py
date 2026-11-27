@@ -386,7 +386,7 @@ def test_resolve_raises_when_nothing_fits(monkeypatch):
     _patch_ytdlp(monkeypatch)
 
     with pytest.raises(FeedError, match="too big"):
-        youtube.resolve(_item(), quality=_budget(1024))
+        youtube.resolve(_item(), quality=replace(_budget(1024), max_parts=4))
 
 
 def test_resolve_raises_when_no_format_is_usable(monkeypatch):

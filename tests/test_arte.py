@@ -216,7 +216,7 @@ def test_pick_variant_raises_when_nothing_fits():
     variants = arte._variants(MASTER)
     with pytest.raises(FeedError, match="too big"):
         arte._pick_variant(
-            variants, DURATION, Quality(max_height=None, part_bytes=1024), "127395-052-A"
+            variants, DURATION, Quality(max_height=None, part_bytes=1024, max_parts=4), "127395-052-A"
         )
 
 

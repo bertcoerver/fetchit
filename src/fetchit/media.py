@@ -62,8 +62,8 @@ class VideoTooBig(FeedError):
     """Raised for a video no rendition of which fits the feed's size budget.
 
     Only possible with ``quality.part_size_mb`` set (see :mod:`fetchit.quality`):
-    an item is only this big when its smallest rendition needs more than
-    ``max_parts`` parts.
+    and ``quality.max_parts`` set too: an item is only this big when its
+    smallest rendition needs more parts than that.
 
     The other permanent answer, told apart from a plain ``FeedError`` for the
     same reason as :class:`VideoTooShort`: a two-hour documentary is not 90 MB

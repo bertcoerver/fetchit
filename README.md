@@ -406,16 +406,25 @@ it is going, so it is a setting, for the library and per feed:
 | Key | Default | |
 |---|---|---|
 | `max_height` | `1080` | The tallest picture worth having. `null` for no limit. |
+| `min_height` | off | The shortest picture worth having. `part_size_mb` never takes the picture below it: a long video gets more parts instead. |
 | `part_size_mb` | off | Switches to rssignal's rule: **the fewest parts of this size possible, then the best quality that fits in that many.** `95` for a feed that is also sent to Signal, which refuses attachments over 100 MB. |
-| `max_parts` | `4` | With `part_size_mb`: a video needing more parts than this isn't downloaded at all. |
+| `max_parts` | off | With `part_size_mb`: a video needing more parts than this isn't downloaded at all. |
 
 The choice is made before downloading, from each source's own size estimates, and
 `fetchit run --dry-run` shows it. The picture is never re-encoded: streams are
 copied (H.264 and AAC, which every player handles).
 
-A feed that goes to both Jellyfin and Signal has to pick one: the sharpest picture,
-which rssignal then sends in more parts, or a picture that fits Signal, which
-Jellyfin shows as it is.
+A feed that goes to both Jellyfin and Signal is one file for both:
+
+```json
+"quality": {"max_height": 1080, "min_height": 360, "part_size_mb": 95}
+```
+
+A video that fits in one Signal message at 360p or better is downloaded at the
+best quality that does. One that doesn't is downloaded at the best quality that
+fits in two messages, or three — as few as 360p allows — and rssignal sends it
+in that many parts. Without a `min_height` the picture goes as low as the source
+offers to save a part.
 
 ## The library
 
