@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Give quality a min_height, and no limit on parts unless asked
+- Go back to one file per video
+
 ## 0.5.0
 
 - Keep a second, smaller copy of a video where a feed asks for one
