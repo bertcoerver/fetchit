@@ -208,10 +208,6 @@ class YoutubePlan:
     def resolution(self) -> str:
         return f"{self.width}x{self.height}"
 
-    @property
-    def rendition(self) -> str:
-        return self.selector
-
     def describe(self) -> str:
         mb = self.estimated_bytes / (1024 * 1024)
         return f"{self.resolution}, ~{mb:.0f} MB{in_parts(self.parts)}"

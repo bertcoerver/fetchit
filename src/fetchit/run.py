@@ -78,10 +78,8 @@ from .media import (
     fetch_body,
     item_id,
     kind_of,
-    one_item,
     request_headers,
     resolve,
-    resolve_small,
 )
 from .state import State
 
@@ -435,25 +433,16 @@ def _fetch_item(
 ) -> str:
     """Download ``item``'s media and picture, and file it. Returns its record's path."""
     with tempfile.TemporaryDirectory(dir=staging_dir(root), prefix="download-") as into:
-        media = small = None
+        media = None
         if kind != TEXT:
             plan = resolve(item, cfg.quality)
-            second = resolve_small(item, cfg.quality, plan)
-            with one_item():
-                if second is not None:
-                    # First, being the lesser loss if the other then fails. In a
-                    # folder of its own: both plans name their file the same.
-                    aside = os.path.join(into, "small")
-                    os.mkdir(aside)
-                    small = second.fetch(aside, timeout=VIDEO_TIMEOUT)
-                media = plan.fetch(into, timeout=VIDEO_TIMEOUT)
+            media = plan.fetch(into, timeout=VIDEO_TIMEOUT)
         body = fetch_body(item, into)
         # A body's first picture is the item's picture: no second copy of it.
         has_picture = any(b.get("path") and b["type"] == "image" for b in body)
         image = None if has_picture else _download_image(item.image_url, into, cfg.name)
         return write_item(
-            root, cfg, parsed, item, kind, item_id=iid,
-            media=media, small=small, image=image, body=body,
+            root, cfg, parsed, item, kind, item_id=iid, media=media, image=image, body=body
         )
 
 
@@ -502,11 +491,7 @@ def _describe(config: Config, cfg: FeedConfig, item: FeedItem, kind: str, iid: s
     print(f"[{cfg.name}] {when}  {item.title}")
     if kind != TEXT:
         try:
-            plan = resolve(item, cfg.quality)
-            print(f"    {kind}: {plan.describe()}")
-            second = resolve_small(item, cfg.quality, plan)
-            if second is not None:
-                print(f"    small copy: {second.describe()}")
+            print(f"    {kind}: {resolve(item, cfg.quality).describe()}")
         except PERMANENT as exc:
             print(f"    nothing downloaded: {exc}")
             return False

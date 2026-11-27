@@ -144,10 +144,6 @@ class HlsPlan:
     def estimated_bytes(self) -> int:
         return self.variant.estimated_bytes(self.duration)
 
-    @property
-    def rendition(self) -> tuple[str, int]:
-        return self.master_url, self.variant.index
-
     def describe(self) -> str:
         mb = self.estimated_bytes / (1024 * 1024)
         return f"{self.variant.resolution}, ~{mb:.0f} MB{in_parts(self.parts)}"

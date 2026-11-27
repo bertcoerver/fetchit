@@ -457,7 +457,7 @@ class Service:
             q = cfg.quality
             quality = (f"≤{q.max_height}p" if q.max_height else "best") + (
                 f", {q.part_bytes // (1024 * 1024)} MB parts" if q.part_bytes else ""
-            ) + (" + small copy" if q.small else "")
+            )
             after = state.after(cfg.name)
             out.append({
                 "name": cfg.name,

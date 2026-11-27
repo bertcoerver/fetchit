@@ -29,10 +29,6 @@ so everything here leans towards asking less:
   script would never see it, so it is kept here instead: no new download starts
   until the previous one's duration has passed. A run that meets the wait leaves
   the episode for a later run.
-- **Two copies are two downloads.** An episode wanted at two qualities (a
-  feed's ``quality.small``) is one visit — the second file follows the first
-  without a wait in between, inside :func:`one_visit` — and is paid for after:
-  the wait that follows is the episode's length twice over.
 - **Backing off an episode that fails.** One hour, then two, four, … up to a
   day, without a single request in between. An episode that has failed for
   :data:`GIVE_UP_AFTER` is let go for good (:class:`~fetchit.media.VideoGone`)
@@ -49,7 +45,6 @@ is for; losing it costs at most one request sooner than planned.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import time
@@ -100,10 +95,6 @@ GIVE_UP_AFTER = 3 * 24 * 60 * 60
 _cookies = CookieJar()
 _opener = build_opener(HTTPCookieProcessor(_cookies))
 _live_sessions: set[str] = set()
-
-# The episodes downloaded so far in the visit that is going on, if one is; see
-# :func:`one_visit`.
-_visit: set[str] | None = None
 
 _LOOKUP_NS = "downloadgemist_lookup"
 _LAST_NS = "downloadgemist_last"
@@ -166,23 +157,6 @@ def streams(url: str) -> Lookup:
     return _look_up(url)
 
 
-@contextlib.contextmanager
-def one_visit():
-    """Within this, an episode's second file follows its first without the wait.
-
-    For an episode downloaded at two qualities: the wait is the site's between
-    one visitor's downloads, and without this the second copy would meet the
-    wait its own first copy started. The wait is not skipped but added up —
-    after two files of an episode it is twice the episode's length.
-    """
-    global _visit
-    outer, _visit = _visit, set()
-    try:
-        yield
-    finally:
-        _visit = outer
-
-
 def fetch(lookup: Lookup, label: str, into: str, *, timeout: float) -> str:
     """Download ``label`` of ``lookup``'s episode into ``into``; return its path.
 
@@ -192,12 +166,10 @@ def fetch(lookup: Lookup, label: str, into: str, *, timeout: float) -> str:
     """
     deadline = time.monotonic() + timeout
     url = lookup.url
-    again = _visit is not None and url in _visit
-    _check_allowed(url, waiting=not again)
+    _check_allowed(url)
 
     stale = time.time() - lookup.looked_up_at > SESSION_FRESH
-    # A session has handed out its file once; the second file gets its own.
-    if again or stale or lookup.session_id not in _live_sessions:
+    if stale or lookup.session_id not in _live_sessions:
         lookup = _look_up(url)
     session = lookup.session_id
 
@@ -236,9 +208,7 @@ def fetch(lookup: Lookup, label: str, into: str, *, timeout: float) -> str:
         raise _failed(url, FeedError("Downloadgemist gave no file to download"))
 
     # The site's clock starts when a visitor gets the file, so this one does too.
-    _started(lookup.duration, on_top=again)
-    if _visit is not None:
-        _visit.add(url)
+    _started(lookup.duration)
 
     path = os.path.join(into, "video.mp4")
     remaining = max(60.0, deadline - time.monotonic())
@@ -266,12 +236,8 @@ def wait_left(now: float | None = None) -> float:
 # --- the gentle part --------------------------------------------------------
 
 
-def _check_allowed(url: str, *, waiting: bool = True) -> None:
-    """Refuse — without a request — while waiting, backing off, or given up.
-
-    ``waiting=False`` leaves the site's wait out of it: for the second file of
-    an episode whose first started that wait (see :func:`one_visit`).
-    """
+def _check_allowed(url: str) -> None:
+    """Refuse — without a request — while waiting, backing off, or given up."""
     failed = cache.get(_FAILED_NS, url)
     if isinstance(failed, dict):
         now = time.time()
@@ -290,7 +256,7 @@ def _check_allowed(url: str, *, waiting: bool = True) -> None:
                 f"again before {_clock(next_at)}"
             )
 
-    left = wait_left() if waiting else 0
+    left = wait_left()
     if left > 0:
         raise FeedError(
             f"waiting for Downloadgemist: {left / 60:.0f} min left of the pause "
@@ -332,10 +298,8 @@ def _succeeded(url: str) -> None:
     cache.save()
 
 
-def _started(duration: float, *, on_top: bool = False) -> None:
-    """Start the site's wait: ``duration``, ``on_top`` of what is left of the last."""
-    wait = float(duration) + (wait_left() if on_top else 0.0)
-    cache.put(_LAST_NS, _LAST_KEY, {"at": time.time(), "wait": wait})
+def _started(duration: float) -> None:
+    cache.put(_LAST_NS, _LAST_KEY, {"at": time.time(), "wait": float(duration)})
     cache.save()
 
 
