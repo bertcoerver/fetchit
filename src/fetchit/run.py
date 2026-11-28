@@ -41,6 +41,7 @@ from datetime import datetime, timedelta, timezone
 from . import cache, timing
 from .config import Config, ConfigError
 from .download import download_to, suffix_for
+from .eprimo import SignedOut
 from .errorlog import log_exception, log_line
 from .notify import notify
 from .feeds import (
@@ -273,6 +274,11 @@ def _locked_run(config: Config, feeds: list[FeedConfig], *, dry_run: bool) -> Su
                 summary.blocked += 1
                 print(f"[{cfg.name}] skipped: {exc}", file=sys.stderr)
                 log_line(f"[{cfg.name}] skipped: {exc}")
+            except SignedOut as exc:
+                # Not a fault to trace: the feed waits for a sign-in.
+                summary.failed += 1
+                print(f"[{cfg.name}] stopped: {exc}", file=sys.stderr)
+                log_line(f"[{cfg.name}] stopped: {exc}")
             except Exception as exc:
                 summary.failed += 1
                 print(f"[{cfg.name}] stopped: {exc}", file=sys.stderr)

@@ -367,6 +367,26 @@ def check() -> bool:
         return False
 
 
+def keep_alive() -> bool | None:
+    """Use the kept session, so that e-Primo does not end it for being idle.
+
+    e-Primo ends a session nobody has used for some hours (one left alone
+    overnight is gone by morning) and keeps one that is asked something every
+    ten minutes for as long as that goes on. ``True`` if the session is still
+    good, ``False`` if e-Primo has ended it, and ``None`` where there is no
+    session or no telling — a network that is down is not a session ending.
+    """
+    if _load_session() is None:
+        return None
+    try:
+        _api("/auth/oauth2/userinfo")
+    except SignedOut:
+        return False
+    except FeedError:
+        return None
+    return True
+
+
 # --- a post's text ----------------------------------------------------------
 
 _HEADINGS = ("h1", "h2", "h3", "h4", "h5", "h6")

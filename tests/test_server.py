@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from fetchit import server
-from fetchit.feeds import FeedConfig, FeedItem, ParsedFeed
+from fetchit.feeds import FeedConfig, FeedError, FeedItem, ParsedFeed
 from fetchit.library import write_item
 from fetchit.run import Summary
 from fetchit.server import Service, next_slot, parse_schedule
@@ -547,3 +547,38 @@ def test_a_link_taken_out_and_put_back_is_fetched_again(running, tmp_path):
     assert [r["id"] for r in left] == ["npo:hijskraan_1"]
     videos = [p.name for p in library.rglob("*.mp4")]
     assert len(videos) == 1
+
+
+def test_the_e_primo_session_is_kept_alive_and_its_end_said_once(tmp_path, monkeypatch):
+    from fetchit import eprimo
+
+    monkeypatch.setenv(eprimo.SESSION_ENV, str(tmp_path / "eprimo-session.json"))
+    answers, asked = [], []
+
+    def fake_ask(path):
+        asked.append(path)
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(eprimo, "_ask", fake_ask)
+    service = Service(str(tmp_path / "fetchit.json"))
+
+    assert service.eprimo_keep_alive() is None and not asked  # no session: nothing to ask
+
+    eprimo._save_session({"oneSessionId": "abc"})
+    answers[:] = [{"type": "PERSRELELEVE"}, FeedError("no network"), eprimo.SignedOut("ended")]
+    assert service.eprimo_keep_alive() is True
+    assert service.eprimo_keep_alive() is None and not service.activity  # a network problem ends nothing
+    assert service.eprimo_keep_alive() is False
+    assert [(a["kind"], a["ok"]) for a in service.activity] == [("e-Primo", False)]
+
+    assert service.eprimo_keep_alive() is None  # an ended session is left alone
+    assert len(asked) == 3 and len(service.activity) == 1
+
+    (tmp_path / "eprimo-session.json").write_text(
+        json.dumps({"cookies": {"oneSessionId": "new"}, "signed_in": "2026-11-27T08:00:00+00:00"})
+    )
+    answers[:] = [{"type": "PERSRELELEVE"}]
+    assert service.eprimo_keep_alive() is True  # a new sign-in is kept alive again

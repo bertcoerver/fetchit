@@ -103,7 +103,10 @@ back, make an automation in the Shortcuts app: **When** Wi-Fi, your network,
 (`https://ent.e-primo.fr/blog/id/…`), which is read as you. Give it your
 ÉduConnect identifier and password and **Sign in**: the password is used for
 that one sign-in and kept nowhere, and the e-Primo session it gives is kept on
-the add-on's own volume. The box says whether e-Primo still accepts the session.
+the add-on's own volume. e-Primo ends a session nobody has used for a few hours,
+so the add-on uses it every ten minutes, which keeps it going; after the add-on
+or the Pi has been off for some hours it wants a new sign-in. The box says
+whether e-Primo still accepts the session.
 When it no longer does, the blog's feed stops — its run says `Sign in again` —
 until you sign in here once more; nothing is skipped in between.
 

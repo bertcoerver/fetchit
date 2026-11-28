@@ -66,6 +66,11 @@ SAVED_FEED = "Saved for later"
 YT_DLP_REQUIREMENT = "yt-dlp[default,deno]"
 DEFAULT_FROM = "127.0.0.1,::1"
 
+# How often the e-Primo session is used to stop e-Primo ending it as idle. Ten
+# minutes is what was tried, and kept a session past eleven hours where one
+# left alone was gone in under eight; the limit itself is not known.
+EPRIMO_KEEP_ALIVE = 600
+
 # yt-dlp breaks whenever YouTube changes, so a pinned one rots within weeks.
 # With UPDATE_YT_DLP_ENV set, a scheduled run upgrades it first, once a day.
 YT_DLP_EVERY = 24 * 60 * 60
@@ -210,6 +215,7 @@ class Service:
         self._tees: tuple[_Tee, _Tee] | None = None
         self._yt_dlp_updated = 0.0
         self._config_lock = threading.Lock()
+        self._eprimo_ended: str | None = None
 
     def config(self) -> Config:
         return load_config(self.config_file, library=self.library)
@@ -222,6 +228,7 @@ class Service:
         sys.stdout, sys.stderr = out, err
         if self.schedule:
             threading.Thread(target=self._schedule_loop, daemon=True, name="fetchit-schedule").start()
+        threading.Thread(target=self._eprimo_loop, daemon=True, name="fetchit-eprimo").start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -406,6 +413,32 @@ class Service:
         except OSError:
             info["disk"] = None
         return info
+
+    def _eprimo_loop(self) -> None:
+        while not self._stop.wait(EPRIMO_KEEP_ALIVE):
+            try:
+                self.eprimo_keep_alive()
+            except Exception as exc:  # the loop outlives whatever one round met
+                log_line(f"e-Primo: keeping the session alive failed: {exc!r}")
+
+    def eprimo_keep_alive(self) -> bool | None:
+        """Use the e-Primo session, if there is one, so it is not ended for idleness.
+
+        A session e-Primo has ended is said so once, in the log and the
+        activity list, and then left alone until a new sign-in replaces it.
+        """
+        from . import eprimo
+
+        since = eprimo.signed_in_since()
+        if since is None or since == self._eprimo_ended:
+            return None
+        alive = eprimo.keep_alive()
+        if alive is False:
+            self._eprimo_ended = since
+            text = f"e-Primo has ended the session. {eprimo.SIGN_IN_ADVICE}"
+            self.activity.appendleft({"when": _iso(time.time()), "kind": "e-Primo", "text": text, "ok": False})
+            log_line(f"e-Primo: {text}")
+        return alive
 
     def eprimo(self, *, ask: bool = True) -> dict:
         """Where the e-Primo sign-in stands, for the panel's box.

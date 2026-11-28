@@ -389,6 +389,11 @@ kept is the e-Primo session it gives, in a file only you can read
 (`$FETCHIT_EPRIMO_SESSION`, by default beside the cache): enough to read the blog
 until e-Primo ends the session, and no use for ÉduConnect itself.
 
+e-Primo ends a session nobody has used for a few hours, so `fetchit serve` uses
+it every ten minutes, which keeps it going. Without `serve` running — `fetchit
+run` from cron, a machine that was off for the night — it lapses and wants a new
+sign-in.
+
 When e-Primo ends the session, the feed stops with `Sign in again` — in the run's
 output, the log and the box — and carries on from the same post once you have. To
 never be asked, set `FETCHIT_EDUCONNECT_USER` and `FETCHIT_EDUCONNECT_PASSWORD`:

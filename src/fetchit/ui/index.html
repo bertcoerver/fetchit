@@ -365,7 +365,7 @@ async function saveConfig() {
     const c = await api("api/config", {method: "PUT", body: {text: $("config").value, version: cfg.version}});
     cfg.version = c.version; cfg.saved = c.text; $("config").value = c.text;
     configLine(`Saved, ${c.feeds} feed(s).`, "ok");
-    loadStatus(); loadFeeds(); loadActivity();
+    loadStatus(); loadFeeds(); loadActivity(); loadEprimo();
   } catch (e) { configLine(esc(e.message), "bad"); $("config-save").disabled = false; }
 }
 
