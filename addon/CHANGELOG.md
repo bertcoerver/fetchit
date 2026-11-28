@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- Keep the e-Primo session alive by using it every ten minutes
+
 ## 0.6.0
 
 - Give quality a min_height, and no limit on parts unless asked
